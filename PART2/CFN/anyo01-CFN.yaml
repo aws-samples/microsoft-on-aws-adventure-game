@@ -1,0 +1,2048 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Migrate and Modernize Microsoft Application. WARNING This code is designed to setup an AWS Workshop. Before considering deployment into a production environment, please conduct static code analysis to identify and address any security issues.
+
+### Parameters
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Deployment Options
+        Parameters:
+          - DeployNLB
+          - DeployAurora
+      - Label:
+          default: Source code repositories
+        Parameters:
+          - S3SourceBucket
+          - GitRepo
+      - Label:
+          default: Network Settings
+        Parameters:
+          - VpcCidr
+          - AvailabilityZone1
+          - AvailabilityZone2
+      - Label:
+          default: Operating System Settings
+        Parameters:
+          - WindowsDomain
+          - AdminBoxName
+          - LatestAmiIdWin
+          - LatestAmiIdECS
+      - Label:
+          default: Resource Names and Tagging
+        Parameters:
+          - PrefixCode
+          - DepartmentTag
+          - EnvironmentTag
+          - WorkShopTag
+Parameters:
+  DeployNLB:
+    Type: String
+    Description: Select "true" if you plan to connect through RDP over the public Internet (not recommended)
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+  DeployAurora:
+    Type: String
+    Description: Select "true" if you plan to complete the database refactoring mission
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+  S3SourceBucket:
+    Type: String
+    Default: anyowebserverfilesbuwdev
+    Description: Amazon S3 bucket that contains source web server files
+  GitRepo:
+    Type: String
+    Default: "https://github.com/hansmohob/anyo.git"
+    Description: Enter the git repo url which contains the workshop source code
+  VpcCidr:
+    Type: String
+    Default: "10.180"
+    Description: Specify the first 2 octets of VPC and subnet CIDR range
+  AvailabilityZone1:
+    Type: String
+    Default: us-west-2a
+    Description: Set the primary Availability Zone to the region where you are deploying this template.
+  AvailabilityZone2:
+    Type: String
+    Default: us-west-2b
+    Description: Set the secondary Availability Zone to the region where you are deploying this template.
+  LatestAmiIdWin:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base
+    Description: Retrieve the latest Windows AMI for the region using AWS Systems Manager.
+  LatestAmiIdECS:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ecs/optimized-ami/windows_server/2019/english/full/recommended/image_id
+    Description: Retrieve the latest Windows ECS Optimized AMI for the region using AWS Systems Manager.
+  WindowsDomain:
+    Type: String
+    Default: city.com
+    Description: Specify the name of the Managed Microsoft AD domain. Needs to be in the form domain.com
+  AdminBoxName:
+    Type: String
+    Default: devbox
+    Description: Enter the hostname of the Windows EC2 administration server. Maximum 15 characters.
+  PrefixCode:
+    Type: String
+    Default: anyo
+    Description: Use a 3 or 4-letter unique prefix for tag values and resource names that are pre-created
+  DepartmentTag:
+    Type: String
+    Default: Migrate Modernize and Optimize in 2 hours
+    Description: Enter Department name tag value
+  EnvironmentTag:
+    Type: String
+    Default: production
+    Description: Enter Customer environment tag value
+  WorkShopTag:
+    Type: String
+    Default: anyo
+    Description: Enter AWS Workshop abbreviated tag value
+Conditions:
+  DeployNLB: !Equals [!Ref DeployNLB, "true"]
+  DeployAurora: !Equals [!Ref DeployAurora, "true"]
+Resources:
+
+### AWS Key Management Service (Scaffold)
+  kmskey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: The Microsoft Adventure Game
+      PendingWindowInDays: 7
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: key-default-1
+        Statement:
+          - Sid: Enable IAM User Permissions
+            # https://docs.aws.amazon.com/kms/latest/developerguide/key-policy-overview.html
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action:
+              - kms:*
+            Resource:
+              - "*"
+          - Sid: Enable Cloudwatch access to KMS Key
+            # https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html
+            Effect: Allow
+            Principal:
+              Service: !Sub logs.${AWS::Region}.amazonaws.com
+            Action:
+              - kms:Encrypt*
+              - kms:Decrypt*
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:Describe*
+            Resource:
+              - "*"
+            Condition:
+              ArnLike:
+                "kms:EncryptionContext:aws:logs:arn": !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
+      Tags:
+        - Key: Owner
+          Value: !Sub ${DepartmentTag}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  kmskeyalias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/${PrefixCode}-keyvault-cmk
+      TargetKeyId: !Ref kmskey
+
+  ### Amazon S3 Bucket (Scaffold)
+  s3bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Owner
+          Value: !Sub ${DepartmentTag}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: storage
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  s3bucketpolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref s3bucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: Allow HTTPS only
+            Effect: Deny
+            Principal: "*"
+            Action:
+              - s3:*
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucket}
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucket}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+          - Sid: Allow TLS 1.2 and above
+            Effect: Deny
+            Principal: "*"
+            Action:
+              - s3:*
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucket}
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucket}/*
+            Condition:
+              NumericLessThan:
+                s3:TlsVersion: 1.2
+          # https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html
+          # Consider limiting principle to specific region
+          - Sid: Allow ALB logging access regions available as of August 2022 or later
+            Effect: Allow
+            Principal:
+              Service: logdelivery.elasticloadbalancing.amazonaws.com
+            Action:
+              - s3:PutObject
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucket}
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucket}/*
+          - Sid: Allow ALB logging access regions available before August 2022
+            Effect: Allow
+            Principal:
+              AWS: 
+                - arn:aws:iam::127311923021:root #US East (N. Virginia) 
+                - arn:aws:iam::033677994240:root #US East (Ohio)
+                - arn:aws:iam::027434742980:root #US West (N. California)
+                - arn:aws:iam::797873946194:root #US West (Oregon)
+                - arn:aws:iam::098369216593:root #Africa (Cape Town)
+                - arn:aws:iam::754344448648:root #Asia Pacific (Hong Kong)
+                - arn:aws:iam::589379963580:root #Asia Pacific (Jakarta)
+                - arn:aws:iam::718504428378:root #Asia Pacific (Mumbai)
+                - arn:aws:iam::383597477331:root #Asia Pacific (Osaka)
+                - arn:aws:iam::600734575887:root #Asia Pacific (Seoul)
+                - arn:aws:iam::114774131450:root #Asia Pacific (Singapore)
+                - arn:aws:iam::783225319266:root #Asia Pacific (Sydney)
+                - arn:aws:iam::582318560864:root #Asia Pacific (Tokyo) 
+                - arn:aws:iam::985666609251:root #Canada (Central) 
+                - arn:aws:iam::054676820928:root #Europe (Frankfurt)
+                - arn:aws:iam::156460612806:root #Europe (Ireland)
+                - arn:aws:iam::652711504416:root #Europe (London)
+                - arn:aws:iam::635631232127:root #Europe (Milan)
+                - arn:aws:iam::009996457667:root #Europe (Paris) 
+                - arn:aws:iam::897822967062:root #Europe (Stockholm)
+                - arn:aws:iam::076674570225:root #Middle East (Bahrain)
+                - arn:aws:iam::507241528517:root #South America (São Paulo)
+            Action:
+              - s3:PutObject
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucket}
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucket}/*
+
+  ### Resource Group (Scaffold)
+  rgg:
+    Type: AWS::ResourceGroups::Group
+    Properties:
+      Description: Microsoft on AWS Adventure Game resources
+      Name: !Sub ${PrefixCode}-resources
+      ResourceQuery:
+        Type: TAG_FILTERS_1_0
+        Query:
+          ResourceTypeFilters:
+            - AWS::AllSupported
+          TagFilters:
+            - Key: customer
+              Values:
+                - !Sub ${DepartmentTag}
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-resources
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+        - Key: resourcetype
+          Value: scaffold
+
+  ### Amazon VPC (Scaffold)
+  vpc01:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Sub ${VpcCidr}.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-vpc
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+        - Key: resourcetype
+          Value: network
+  iarvpcflowlogs:
+    Type: AWS::IAM::Role
+    # https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs-cwl.html
+    Properties:
+      RoleName: !Sub ${PrefixCode}-iamrole-vpcflowlogs
+      Description: Publish flow logs to CloudWatch Logs
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-VpcFlowLogsPermissions
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource: 
+                  - "arn:aws:logs:*:*:*"
+                Condition:
+                  StringEquals:
+                    "aws:SourceAccount": !Sub "${AWS::AccountId}"
+                  ArnLike:
+                    "aws:SourceArn": !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:*"
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-iamrole-vpcflowlogs
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  cwlvpclogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      KmsKeyId: !GetAtt kmskey.Arn
+      LogGroupName: !Sub ${PrefixCode}-vpcflowlog
+      RetentionInDays: 30
+  cwlvpcflowlog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt iarvpcflowlogs.Arn
+      LogGroupName: !Ref cwlvpclogs
+      ResourceId: !Ref vpc01
+      ResourceType: VPC
+      TrafficType: ALL
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-vpcflowlog
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: monitoring
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+
+  ### Amazon VPC Subnets (Scaffold)
+  sbnpb01:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc01
+      AvailabilityZone: !Sub ${AvailabilityZone1}
+      CidrBlock: !Sub ${VpcCidr}.1.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-subnet-public1-${AvailabilityZone1}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  sbnpb02:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc01
+      AvailabilityZone: !Sub ${AvailabilityZone2}
+      CidrBlock: !Sub ${VpcCidr}.2.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-subnet-public2-${AvailabilityZone2}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  sbnpv01:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc01
+      AvailabilityZone: !Sub ${AvailabilityZone1}
+      CidrBlock: !Sub ${VpcCidr}.3.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-subnet-private1-${AvailabilityZone1}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  sbnpv02:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc01
+      AvailabilityZone: !Sub ${AvailabilityZone2}
+      CidrBlock: !Sub ${VpcCidr}.4.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-subnet-private2-${AvailabilityZone2}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  sbnpv03:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc01
+      AvailabilityZone: !Sub ${AvailabilityZone1}
+      CidrBlock: !Sub ${VpcCidr}.5.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-subnet-private3-${AvailabilityZone1}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  sbnpv04:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc01
+      AvailabilityZone: !Sub ${AvailabilityZone2}
+      CidrBlock: !Sub ${VpcCidr}.6.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-subnet-private4-${AvailabilityZone2}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+
+  ### Internet Gateway (Scaffold)
+  igw01:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-igw
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  igwattach:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref vpc01
+      InternetGatewayId: !Ref igw01
+
+  ### Elastic IPs (Scaffold)
+  eip01:
+    Type: AWS::EC2::EIP
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-eip-${AvailabilityZone1}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  eip02:
+    Type: AWS::EC2::EIP
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-eip-${AvailabilityZone2}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+
+  ### NAT Gateways (Scaffold)        
+  ngw01:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt eip01.AllocationId
+      SubnetId: !Ref sbnpb01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-nat-public1-${AvailabilityZone1}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+    DependsOn: igw01
+  ngw02:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt eip02.AllocationId
+      SubnetId: !Ref sbnpb02
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-nat-public2-${AvailabilityZone2}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+    DependsOn: igw01
+
+  ### Route Tables (Scaffold)
+  rttpb01:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref vpc01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-rtb-public
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  pubroute01:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref rttpb01
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !GetAtt igw01.InternetGatewayId
+  pubsubnet01assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref sbnpb01
+      RouteTableId: !Ref rttpb01
+  pubsubnet02assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref sbnpb02
+      RouteTableId: !Ref rttpb01
+  rttpv01:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref vpc01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-rtb-private1--${AvailabilityZone1}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  privroute01:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref rttpv01
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !GetAtt ngw01.NatGatewayId
+  privsbnassoc01:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref sbnpv01
+      RouteTableId: !Ref rttpv01
+  rttpv02:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref vpc01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-rtb-private2--${AvailabilityZone2}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  privroute02:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref rttpv02
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !GetAtt ngw02.NatGatewayId
+  privsbnassoc02:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref sbnpv02
+      RouteTableId: !Ref rttpv02
+  rttpv03:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref vpc01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-rtb-private3--${AvailabilityZone1}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  privroute03:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref rttpv03
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !GetAtt ngw01.NatGatewayId
+  privsbnassoc03:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref sbnpv03
+      RouteTableId: !Ref rttpv03
+  rttpv04:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref vpc01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-rtb-private3--${AvailabilityZone2}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: network
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  privroute04:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref rttpv04
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !GetAtt ngw02.NatGatewayId
+  privsbnassoc04:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref sbnpv04
+      RouteTableId: !Ref rttpv04
+
+  ### Security Groups (Scaffold)
+  scgweb01:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${PrefixCode}-securitygroup-web
+      GroupDescription: web tier security group
+      VpcId: !Ref vpc01
+      SecurityGroupIngress:
+        - Description: HTTP inbound
+          IpProtocol: tcp
+          # Consider setting FromPort and ToPort to 443 for production environments
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - Description: HTTPS inbound
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - Description: allow all traffic outbound
+          IpProtocol: "-1"
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-securitygroup-web
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  scgapp01:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${PrefixCode}-securitygroup-app
+      GroupDescription: application tier security group
+      VpcId: !Ref vpc01
+      SecurityGroupIngress:
+        - Description: HTTPS inbound from web tier
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref scgweb01
+      SecurityGroupEgress:
+        - Description: allow all traffic outbound
+          IpProtocol: "-1"
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-securitygroup-app
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  scgapp01SMB:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow SMB traffic from app tier for AppPool config signal (Depreciated)
+      GroupId: !GetAtt scgapp01.GroupId
+      IpProtocol: tcp
+      FromPort: 445
+      ToPort: 445
+      SourceSecurityGroupId: !Ref scgapp01
+  scgapp01RDP:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow RDP traffic from app tier
+      GroupId: !GetAtt scgapp01.GroupId
+      IpProtocol: tcp
+      FromPort: 3389
+      ToPort: 3389
+      SourceSecurityGroupId: !Ref scgapp01
+  scgapp01WinRM:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow WinRM traffic
+      GroupId: !GetAtt scgapp01.GroupId
+      IpProtocol: tcp
+      FromPort: 5986
+      ToPort: 5986
+      SourceSecurityGroupId: !Ref scgapp01
+  scgdat01:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${PrefixCode}-securitygroup-data
+      GroupDescription: data tier security group
+      VpcId: !Ref vpc01
+      SecurityGroupIngress:
+        - Description: Allow SQL traffic from app tier
+          IpProtocol: tcp
+          FromPort: 1433
+          ToPort: 1433
+          SourceSecurityGroupId: !Ref scgapp01
+        - Description: Allow SMB traffic from app tier
+          IpProtocol: tcp
+          FromPort: 445
+          ToPort: 445
+          SourceSecurityGroupId: !Ref scgapp01
+      SecurityGroupEgress:
+        - Description: allow all traffic outbound
+          IpProtocol: "-1"
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-securitygroup-data
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+
+  ### AWS Managed Microsoft AD (Source)
+  smsmmad01:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${PrefixCode}-secret-domain-admin
+      Description: Temporary Microsoft Managed AD domain administrator credentials
+      KmsKeyId: !GetAtt kmskey.Arn
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username": "Admin","domain": "${WindowsDomain}"}'
+        GenerateStringKey: password
+        PasswordLength: 12
+        ExcludeCharacters: '"@/\'
+        RequireEachIncludedType: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-secret-domain-admin
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  mad01:
+    Type: AWS::DirectoryService::MicrosoftAD
+    Properties:
+      Name: !Sub ${WindowsDomain}
+      Edition: Standard
+      Password: !Sub "{{resolve:secretsmanager:${PrefixCode}-secret-domain-admin:SecretString:password}}"
+      VpcSettings:
+        SubnetIds:
+          - !Ref sbnpv03
+          - !Ref sbnpv04
+        VpcId: !Ref vpc01
+    DependsOn: smsmmad01
+
+  ### DHCP Scope (Source)
+  dhcpscope01:
+    Type: AWS::EC2::DHCPOptions
+    Properties:
+      DomainName: !Sub ${WindowsDomain}
+      DomainNameServers: !GetAtt mad01.DnsIpAddresses
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-dhcp-${WindowsDomain}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: networking
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  dhcpscopeassoc01:
+    Type: AWS::EC2::VPCDHCPOptionsAssociation
+    Properties:
+      VpcId: !Ref vpc01
+      DhcpOptionsId: !Ref dhcpscope01
+
+  ### AWS Systems Manager Documents (Source)  
+  ssmdomainjoin:
+    Type: "AWS::SSM::Document"
+    Properties:
+      Name: !Sub ${PrefixCode}-systemmanagerdoc-domainjoin
+      DocumentType: "Command"
+      Content:
+        schemaVersion: "2.2"
+        description: "Join instances to domain based on tag"
+        mainSteps:
+          - action: "aws:domainJoin"
+            name: "domainJoin"
+            inputs:
+              directoryId: !Ref mad01
+              directoryName: !Sub ${WindowsDomain}
+              dnsIpAddresses: !GetAtt mad01.DnsIpAddresses
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-systemmanagerdoc-domainjoin
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: automation
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  ssmdomainjoinassoc:
+    Type: AWS::SSM::Association
+    Properties:
+      Name: !Ref ssmdomainjoin
+      Targets:
+        - Key: "tag:domainjoin"
+          Values:
+            - "true"
+  iarrdsauth01:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${PrefixCode}-iamrole-rdstomadauthentication
+      Description: Allows Amazon RDS to make calls to Directory Service
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - rds.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonRDSDirectoryServiceAccess
+      Path: /
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-iamrole-rdstomadauthentication
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+
+  ### Amazon RDS for SQL Server (Source)
+  smssqladmin:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${PrefixCode}-secret-sql-admin
+      Description: SQL authentication credentials for RDS for SQL server
+      KmsKeyId: !GetAtt kmskey.Arn
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "sqladmin","authentication": "SQL Server Authentication"}'
+        GenerateStringKey: password
+        PasswordLength: 12
+        ExcludeCharacters: '"@/\&<>;,[]{}()?*=!''`:$'
+        RequireEachIncludedType: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-secret-sql-admin
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  rdsmonitoringrole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub ${PrefixCode}-iamrole-rdsmonitoring
+      Description: Provides access to Cloudwatch for RDS Enhanced Monitoring
+      ManagedPolicyArns:
+      - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
+      AssumeRolePolicyDocument:
+        Version: '2008-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: 'monitoring.rds.amazonaws.com'
+          Action: 'sts:AssumeRole'
+  sbgrdsmssql01:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: DB Subnet group used by RDS for SQL Server
+      DBSubnetGroupName: !Sub ${PrefixCode}-rds-dbsubnetgroup
+      SubnetIds:
+        - !Ref sbnpv03
+        - !Ref sbnpv04
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-rds-dbsubnetgroup
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: networking
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  rdsmssql01:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: "30"
+      AutoMinorVersionUpgrade: true
+      BackupRetentionPeriod: 1
+      DBInstanceClass: db.t3.xlarge
+      DBInstanceIdentifier: !Sub ${PrefixCode}-rdssql-01
+      DBSubnetGroupName: !Ref sbgrdsmssql01
+      DeleteAutomatedBackups: true
+      # Consider setting DeletionProtection to true for production environments
+      DeletionProtection: false
+      Domain: !Ref mad01
+      DomainIAMRoleName: !Ref iarrdsauth01
+      EnableCloudwatchLogsExports:
+        - "error"
+      EnablePerformanceInsights: true
+      Engine: sqlserver-ee
+      EngineVersion: 15.00.4236.7.v1
+      LicenseModel: license-included
+      MasterUsername: !Sub '{{resolve:secretsmanager:${smssqladmin}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${smssqladmin}:SecretString:password}}'
+      MaxAllocatedStorage: 50
+      MonitoringInterval : 60
+      MonitoringRoleArn : !GetAtt rdsmonitoringrole.Arn
+      MultiAZ: false
+      PubliclyAccessible: false
+      StorageEncrypted: true
+      StorageType: gp3
+      VPCSecurityGroups:
+        - !Ref scgdat01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-rds-mssql
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: database
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+    # Consider changing or deleting the UpdateReplacePolicy for production environments
+    UpdateReplacePolicy: Delete
+
+  ### AWS Identity and Access Management (IAM) (Scaffold)
+  iarec2admin:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${PrefixCode}-iamrole-ec2admin
+      Description: Workshop EC2 instance profile role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2describe
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                Resource:
+                  - '*'
+        # https://docs.aws.amazon.com/systems-manager/latest/userguide/security_iam_service-with-iam.html
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2ssm
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - ssm:StartSession
+                Resource:
+                  - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:*
+                  - !Sub arn:aws:ssm:${AWS::Region}::document/AWS-StartPortForwardingSession
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2secrets
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  - !Ref smsmmad01
+                  - !Ref smssqladmin
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2S3
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:DeleteObject
+                  - s3:GetBucketAcl
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:GetObjectAcl
+                  - s3:ListAllMyBuckets
+                  - s3:ListBucket
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${s3bucket}
+                  - !Sub arn:${AWS::Partition}:s3:::${s3bucket}/*
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2S3all
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListAllMyBuckets
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::*
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2kmskey
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource:
+                  - !GetAtt kmskey.Arn
+          # App2Container IAM Role 
+          # https://docs.aws.amazon.com/app2container/latest/UserGuide/iam-a2c.html
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-App2Container
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - apprunner:*
+                  - cloudformation:*
+                  - codebuild:CreateProject
+                  - codecommit:CreateCommit
+                  - codecommit:CreateRepository
+                  - codecommit:GetBranch
+                  - codecommit:GetRepository
+                  - codecommit:TagResource
+                  - codepipeline:CreatePipeline
+                  - codepipeline:GetPipeline
+                  - codepipeline:GetPipelineState
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:CreateKeyPair
+                  - ec2:CreateSecurityGroup
+                  - ec2:CreateTags
+                  - ec2:DescribeAccountAttributes
+                  - ec2:DescribeImages
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeKeyPairs
+                  - ec2:DescribeRouteTables
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeVpcs
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:CompleteLayerUpload
+                  - ecr:CreateRepository
+                  - ecr:DescribeRepositories
+                  - ecr:GetAuthorizationToken
+                  - ecr:InitiateLayerUpload
+                  - ecr:ListImages
+                  - ecr:PutImage
+                  - ecr:TagResource
+                  - ecr:UploadLayerPart
+                  - ecs:CreateCluster
+                  - ecs:CreateService
+                  - ecs:DeregisterTaskDefinition
+                  - ecs:DescribeClusters
+                  - ecs:DescribeServices
+                  - ecs:RegisterTaskDefinition
+                  - ecs:UpdateService
+                  - elasticloadbalancing:*
+                  - events:*
+                  - iam:AddRoleToInstanceProfile
+                  - iam:AttachRolePolicy
+                  - iam:CreateInstanceProfile
+                  - iam:CreatePolicy
+                  - iam:CreateRole
+                  - iam:CreateServiceLinkedRole
+                  - iam:DeleteRolePolicy
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                  - iam:PassRole
+                  - iam:PutRolePolicy
+                  - iam:TagInstanceProfile
+                  - iam:TagRole
+                  - iam:UntagInstanceProfile
+                  - iam:UntagRole
+                  - kms:Decrypt
+                  - lambda:CreateFunction
+                  - lambda:GetFunction
+                  - lambda:GetFunctionCodeSigningConfig
+                  - lambda:InvokeFunction
+                  - lambda:TagResource
+                  - lambda:UntagResource
+                  - logs:CreateLogGroup
+                  - logs:PutRetentionPolicy
+                  - logs:TagResource
+                  - servicediscovery:*
+                  - ssm:CreateDocument
+                  - ssm:GetParameter
+                  - ssm:ListTagsForResource
+                  # added from app2c output
+                  - application-transformation:PutMetricData
+                  - application-transformation:PutLogData
+                  # added through testing
+                  - route53:CreateHostedZone
+                Resource: "*"
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMDirectoryServiceAccess
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-iamrole-ec2admin
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  iapec2admin:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${PrefixCode}-iamprofile-ec2admin
+      Roles:
+        - !Ref iarec2admin
+
+  ### EC2 Key Pair (Scaffold)
+  ec2keypair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Sub ${PrefixCode}-ec2-keypair
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-ec2-keypair
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+
+  ### Amazon EC2 DevBox (Scaffold)
+  ec2srv01:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiIdECS
+      InstanceType: t3a.xlarge
+      KeyName: !Ref ec2keypair
+      SubnetId: !Ref sbnpv01
+      IamInstanceProfile: !Ref iapec2admin
+      Monitoring: true
+      PrivateIpAddress: !Sub ${VpcCidr}.3.100
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            # Consider setting DeleteOnTermination to false in production environments
+            DeleteOnTermination: true
+            Encrypted: true
+            KmsKeyId: alias/aws/ebs
+            VolumeSize: 100
+            VolumeType: gp3
+            Iops: 3000
+      SecurityGroupIds:
+        - !Ref scgapp01
+      UserData:
+        Fn::Base64: !Sub |
+          <powershell>
+          # Script Log
+          Start-Transcript -Path "C:\UserData.log" -Append
+          Write-Output "LOG: START OF EXECUTION"
+          # Install/upgrade SSM Agent
+          if (-not (Test-Path C:\SSMAgent_latest.exe)) {
+              Write-Output "LOG: Installing/upgrading SSM Agent"
+              [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
+              $progressPreference = 'silentlyContinue'
+              Invoke-WebRequest `
+                  https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe `
+                  -OutFile C:\SSMAgent_latest.exe
+              Start-Process `
+                -FilePath C:\SSMAgent_latest.exe `
+                -ArgumentList "/S"
+          }
+          # Install/upgrade SSM Agent Session Manager Plugin
+          if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
+              Invoke-WebRequest `
+                https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe `
+                -OutFile C:\SessionManagerPluginSetup.exe 
+              Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
+          }
+          # Disable IE ESC
+          $IEESCRegKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
+          if ((Test-Path -Path $IEESCRegKey) -and ((Get-ItemPropertyValue -Path $IEESCRegKey -Name "IsInstalled") -ne 0)) {
+              Write-Output "LOG: Disabling Internet Explorer ESC"
+              Set-ItemProperty -Path $IEESCRegKey -Name "IsInstalled" -Value 0
+            }
+          # Apply AWS Systems Manager Fleet Manager Powershell Interface fix
+          if (-not (Test-Path "C:\Program Files\WindowsPowerShell\Modules\PSReadline\2.2.6")) {
+                Write-Output "LOG: Applying AWS Systems Manager Fleet Manager Powershell Interface fix"
+                Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
+                Save-Module -Name PowerShellGet -Path 'C:\Program Files\WindowsPowerShell\Modules' -Force -Confirm:$false
+                Install-Module -Name PSReadLine -Scope AllUsers -Force -Confirm:$false
+            }
+          # Install AWSCLIv2
+          if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2")) {
+            Write-Output "LOG: Intalling AWSCLIv2"
+            msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi /quiet
+            }
+          # Install Admin tools
+          if ((Get-WindowsFeature RSAT-AD-Tools).installed -ne 'True') {
+            Write-Output "LOG: installing admin tools"
+            Install-WindowsFeature -Name RSAT -IncludeAllSubFeature
+          }
+          # Install Chocolatey
+          if (-not (Test-Path C:\ProgramData\\chocolatey)) {
+              Write-Output "LOG: installing Chocolatey"
+              Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          }
+          # Join MMAD Domain
+          if ((Get-WmiObject win32_computersystem).partofdomain -eq $false)  {
+            $FetchedSecret = ConvertFrom-Json -InputObject (Get-SECSecretValue -SecretId ${smsmmad01}).SecretString
+            $Credentials = (New-Object PSCredential($FetchedSecret.username,(ConvertTo-SecureString $FetchedSecret.password -AsPlainText -Force)))
+            Rename-Computer -NewName ${AdminBoxName}
+            Start-Sleep -Seconds 5
+            Write-Output "LOG: Joining Active Directory Domain"
+            Add-Computer -DomainName ${WindowsDomain} -Credential $Credentials -force -Options JoinWithNewName,AccountCreate -restart
+            # Wait for domain join before continue
+            do {
+              $checkdomainjoinedstatus = (Get-WmiObject win32_computersystem).partofdomain
+              Write-Output "LOG: Waiting for instance to join AD domain..."
+              Start-Sleep -Seconds 10
+            }
+            until ($checkdomainjoinedstatus -eq 'True')
+            Write-Output "LOG: Instance has been joined to AD domain!"
+          }
+          # Install dbeaver
+          $Publisher = "DBeaver Corp"
+          $Installed = $null -ne (Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.Publisher -eq $Publisher })
+          if (-not $installed) {
+            Write-Output "LOG: installing dbeaver"
+            C:\ProgramData\\chocolatey\choco install dbeaver -y
+          }
+          # Install Git
+          $Software = "Git"
+          $Installed = $null -ne (Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -eq $Software })
+          if (-not $installed) {
+            Write-Output "LOG: installing Git"
+            C:\ProgramData\\chocolatey\choco install git -y
+            $env:Path += ";C:\Program Files\Git\bin"
+          }
+          # Create Mission Pack
+          $FolderPath = "C:\MISSION_PACK"
+          if (-not (Test-Path $FolderPath\REPO\MISSION-CHECKLIST.txt)) {
+            Write-Output "LOG: Creating MISSION PACK"
+            New-Item -ItemType Directory -Path $FolderPath
+            icacls $FolderPath /grant "Everyone:(OI)(CI)F" /T
+            $env:GIT_REDIRECT_STDERR = '2>&1'
+            git clone ${GitRepo} $FolderPath\REPO
+            $FetchedSecret = ConvertFrom-Json -InputObject (Get-SECSecretValue -SecretId ${smsmmad01}).SecretString
+            (Get-Content $FolderPath\REPO\MISSION-CHECKLIST.txt) |
+                ForEach-Object {
+                    $_ -replace '<devboxusername>', ((Get-SECSecretValue -SecretId ${smsmmad01}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty username) `
+                      -replace '<devboxpassword>', ((Get-SECSecretValue -SecretId ${smsmmad01}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty password) `
+                      -replace '<devboxdomain>', ((Get-SECSecretValue -SecretId ${smsmmad01}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty domain) `
+                      -replace '<sqlserver>', '${rdsmssql01.Endpoint.Address}' `
+                      -replace '<sqlusername>', ((Get-SECSecretValue -SecretId ${smssqladmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty username) `
+                      -replace '<sqlpassword>', ((Get-SECSecretValue -SecretId ${smssqladmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty password) `
+                      -replace '<currentloadbalancerdns>', '${alb01.DNSName}' `
+                      -replace '<secretarn>', '${smsmmad01}' `
+                      -replace '<s3bucket>', '${s3bucket}' `
+                      -replace '<sourceserverIPaddress>', 'figurethisout' `
+                      -replace '<vpcid>', '${vpc01}' `
+                } | Set-Content $FolderPath\REPO\MISSION-CHECKLIST.txt
+          }
+          # App2Container Prerequisites - Worker Machine
+          # https://docs.aws.amazon.com/app2container/latest/UserGuide/start-containerize-prereq.html
+          $FolderPath = "C:\MISSION_PACK"
+          if (-not (Test-Path $FolderPath\APP2C\AWSApp2Container-installer-windows\install.ps1)) {
+            Write-Output "LOG: Completing App2Container prerequisites - Worker Machine"
+            Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
+            Invoke-WebRequest -UseBasicParsing "https://app2container-release-us-east-1.s3.us-east-1.amazonaws.com/latest/windows/AWSApp2Container-installer-windows.zip" -OutFile $FolderPath\APP2C\AWSApp2Container-installer-windows.zip
+            # Extract App2Container for Windows
+            Expand-Archive -Path $FolderPath\APP2C\AWSApp2Container-installer-windows.zip -DestinationPath $FolderPath\APP2C\AWSApp2Container-installer-windows -Force
+          }
+          # Microservices Extractor Prerequisites
+          $FolderPath = "C:\MISSION_PACK"
+          if (-not (Test-Path $FolderPath\MicroservicesExtractor\ServiceExtract.exe)) {
+            Write-Output "LOG: Completing Microservices Extractor prerequisites"
+            New-Item -Path $FolderPath\MicroservicesExtractor -ItemType Directory -Force
+            Invoke-WebRequest -UseBasicParsing "https://s3.us-west-2.amazonaws.com/aws.serviceextract.download/latest/windows/ServiceExtract.exe" -OutFile $FolderPath\MicroservicesExtractor\ServiceExtract.exe
+          }
+          # Install SQL Management Tools
+          $Software = "SQL Server Management Studio"
+          $Installed = $null -ne (Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -eq $Software })
+          if (-not $installed) {
+            Write-Output "LOG: installing SQL Management Tools"
+            C:\ProgramData\\chocolatey\choco install sql-server-management-studio -y
+          }
+          # Install Visual Studio Community Edition
+          $Software = "vs_communityx64msi"
+          $Installed = $null -ne (Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -eq $Software })
+          if (-not $installed) {
+            Write-Output "LOG: installing Visual Studio Community Edition"
+            C:\ProgramData\\chocolatey\choco install visualstudio2022community -y
+            C:\ProgramData\\chocolatey\choco install visualstudio2022-workload-netweb -y
+          }
+          # Useful Locations
+          Write-Output "Log locations"
+          Write-Output "C:\Windows\System32\config\systemprofile\AppData\Local\Temp"
+          Write-Output "C:\ProgramData\Amazon\EC2Launch\log\"
+          # Stop logging
+          Stop-Transcript
+          </powershell>
+          <persist>true</persist>
+      Tags:
+        - Key: Name
+          Value: !Sub ${AdminBoxName}
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: compute
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+    DependsOn:
+      - mad01
+      - rdsmssql01
+
+  ### Amazon Elastic Load Balancer (Source)
+  alb01:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${PrefixCode}-loadbalancer-web
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups:
+        - !Ref scgweb01
+      Subnets:
+        - !Ref sbnpb01
+        - !Ref sbnpb02
+      LoadBalancerAttributes:
+        - Key: deletion_protection.enabled
+          Value: "false"
+        - Key: access_logs.s3.enabled
+          Value: "true"
+        - Key: access_logs.s3.bucket
+          Value: !Ref s3bucket
+        - Key: access_logs.s3.prefix
+          Value: loadbalancer-web
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-loadbalancer-web
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: networking
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  ltg01:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${PrefixCode}-targetgroup-web
+      Port: 443
+      Protocol: HTTPS
+      TargetType: instance
+      VpcId: !Ref vpc01
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: "true"
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: "86400"
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-targetgroup-web
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: networking
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref alb01
+      # Consider setting Port to 443 and Protocol to HTTPS for production environments
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ltg01
+
+  ### Network Load Balancer for RDP over Internet (WARNING: Not recommended - but necessary for workshop attendees without AWS CLI installed)
+  scgnlb01:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${PrefixCode}-securitygroup-rdp
+      GroupDescription: NLB security group
+      VpcId: !Ref vpc01
+      SecurityGroupIngress:
+        - Description: Allow RDP traffic from Internet to NLB
+          IpProtocol: tcp
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - Description: allow all traffic outbound
+          IpProtocol: "-1"
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-securitygroup-nlb
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+    Condition: DeployNLB
+  scgapp01nlb:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow RDP traffic from NLB
+      GroupId: !GetAtt scgapp01.GroupId
+      IpProtocol: tcp
+      FromPort: 3389
+      ToPort: 3389
+      SourceSecurityGroupId: !Ref scgnlb01
+    Condition: DeployNLB
+  nlb01:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${PrefixCode}-loadbalancer-rdp
+      Scheme: internet-facing
+      Type: network
+      SecurityGroups:
+        - !Ref scgnlb01
+      Subnets:
+        - !Ref sbnpb01
+        - !Ref sbnpb02
+      LoadBalancerAttributes:
+        - Key: deletion_protection.enabled
+          Value: "false"
+        - Key: access_logs.s3.enabled
+          Value: "true"
+        - Key: access_logs.s3.bucket
+          Value: !Ref s3bucket
+        - Key: access_logs.s3.prefix
+          Value: loadbalancer-rdp
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-loadbalancer-rdp
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: networking
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+    Condition: DeployNLB
+  rtg01:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${PrefixCode}-targetgroup-rdp
+      Port: 3389
+      Protocol: TCP
+      TargetType: instance
+      Targets:
+      - Id: !Ref ec2srv01
+      VpcId: !Ref vpc01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-targetgroup-rdp
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: networking
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+    Condition: DeployNLB
+  rdplistener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref nlb01
+      Port: 3389
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref rtg01
+    Condition: DeployNLB
+
+  ### Amazon EC2 Auto Scaling Group (Source)
+  ltpwebserver:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${PrefixCode}-launchtemplate-webservers
+      VersionDescription: Launch Template for Windows IIS Web server Auto Scaling Group v1.0
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiIdWin
+        InstanceType: t3a.medium
+        KeyName: !Ref ec2keypair
+        SecurityGroupIds:
+          - !Ref scgapp01
+        EbsOptimized: true
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              DeleteOnTermination: true
+              Encrypted: true
+              KmsKeyId: alias/aws/ebs
+              VolumeSize: 80
+              VolumeType: gp3
+        IamInstanceProfile:
+          Name: !Ref iapec2admin
+        Monitoring:
+          Enabled: true
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub ${PrefixCode}-ec2-webserver
+              - Key: provisioner
+                Value: CFN
+              - Key: workshop
+                Value: !Sub ${WorkShopTag}
+              - Key: resourcetype
+                Value: compute
+              - Key: customer
+                Value: !Sub ${DepartmentTag}
+              - Key: environment
+                Value: !Sub ${EnvironmentTag}
+              - Key: codeblock
+                Value: !Sub ${PrefixCode}-resources
+              - Key: domainjoin
+                Value: 'true'
+        UserData:
+          Fn::Base64: !Sub |
+            <powershell>
+            # Script Log
+            Start-Transcript -Path "C:\UserData.log" -Append
+            Write-Output "LOG: START OF EXECUTION"
+            # Install/upgrade SSM Agent
+            if (-not (Test-Path C:\SSMAgent_latest.exe)) {
+                Write-Output "LOG: Installing/upgrading SSM Agent"
+                [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
+                $progressPreference = 'silentlyContinue'
+                Invoke-WebRequest `
+                    https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe `
+                    -OutFile C:\SSMAgent_latest.exe
+                Start-Process `
+                  -FilePath C:\SSMAgent_latest.exe `
+                  -ArgumentList "/S"
+            }
+            # Install/upgrade SSM Agent Session Manager Plugin
+            if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
+              Invoke-WebRequest `
+                  https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe `
+                  -OutFile C:\SessionManagerPluginSetup.exe 
+              Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
+            }
+            # Wait for domain join before continue
+            do {
+              $checkdomainjoinedstatus = (Get-WmiObject win32_computersystem).partofdomain
+              Write-Output "LOG: Waiting for instance to join AD domain..."
+              Start-Sleep -Seconds 10
+            }
+            until ($checkdomainjoinedstatus -eq 'True')
+            Write-Output "LOG: Instance has been joined to AD domain!"
+            # Disable IE ESC
+            $IEESCRegKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
+            if ((Test-Path -Path $IEESCRegKey) -and ((Get-ItemPropertyValue -Path $IEESCRegKey -Name "IsInstalled") -ne 0)) {
+                Write-Output "LOG: Disabling Internet Explorer ESC"
+                Set-ItemProperty -Path $IEESCRegKey -Name "IsInstalled" -Value 0
+              }
+            # Apply AWS Systems Manager Fleet Manager PowerShell Interface fix
+            if (-not (Test-Path "C:\Program Files\WindowsPowerShell\Modules\PSReadline\2.2.6")) {
+                  Write-Output "LOG: Applying AWS Systems Manager Fleet Manager PowerShell Interface fix"
+                  Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
+                  Save-Module -Name PowerShellGet -Path 'C:\Program Files\WindowsPowerShell\Modules' -Force -Confirm:$false
+                  Install-Module -Name PSReadLine -Scope AllUsers -Force -Confirm:$false
+              }
+            # Install AWSCLIv2
+            if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2")) {
+              msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi /quiet
+              }
+            # Install IIS Web Services
+            if ((Get-WindowsFeature Web-Mgmt-Console).installed -ne 'True') {
+                Write-Output "LOG: Installing IIS Web Services"
+                Install-WindowsFeature Web-Common-Http,Web-Http-Logging,Web-Http-Redirect,Web-Dyn-Compression,Web-Net-Ext45,Web-Asp-Net45,Web-ISAPI-Ext,Web-ISAPI-Filter,Web-Scripting-Tools,Web-Mgmt-Console
+              }
+            # Copy Webserver files
+            Write-Output "LOG: Copying web server files"
+            C:\PROGRA~1\Amazon\AWSCLIV2\aws s3 sync s3://${S3SourceBucket}/anyo-platform-release/old C:\inetpub\anyo
+            (Get-Content C:\inetpub\anyo\Web.config) |
+                ForEach-Object {
+                    $_ -replace '<AMAZONRDSSQLSERVER>', '${rdsmssql01.Endpoint.Address}' `
+                      -replace '<SQLUSERNAME>', ((Get-SECSecretValue -SecretId ${smssqladmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty username) `
+                      -replace '<SQLPASSWORD>', ((Get-SECSecretValue -SecretId ${smssqladmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty password) `
+                } | Set-Content C:\inetpub\anyo\Web.config
+            # Configure Web Server local settings
+            if (Test-Path C:\inetpub\anyo) {
+              Write-Output "LOG: Configuring webserver local settings"
+              # Set permissions and create website
+              icacls "C:\INETPUB\anyo" /grant "IIS_IUSRS:(OI)(CI)(RX)"
+              Set-WebBinding -Name "Default Web Site" -BindingInformation "*:80:" -PropertyName "Port" -Value "81"
+              New-IISSite -Name "anyo" -BindingInformation "*:80:" -PhysicalPath "$env:systemdrive\inetpub\anyo"
+              # Configure self-signed SSL
+              Write-Output "LOG: Configuring self-signed Certificate"
+              $Certificate = New-SelfSignedCertificate -FriendlyName anyo -DnsName "${WindowsDomain}" -CertStoreLocation "Cert:\LocalMachine\My"
+              New-WebBinding -Name anyo -IP "*" -Port 443 -Protocol https
+              get-item cert:\LocalMachine\MY\$Certificate.Thumbprint | new-item 0.0.0.0!443
+              (Get-WebBinding -Name anyo -Protocol "https").AddSslCertificate($Certificate.GetCertHashString(), "my")
+              }
+            # App2Container Prerequisites - Application servers
+            # https://docs.aws.amazon.com/app2container/latest/UserGuide/start-containerize-prereq.html
+            $FolderPath = "C:\MISSION_PACK"
+             if (-not (Test-Path $FolderPath\APP2C\New-SelfSignedCertificateEx.ps1)) {
+              Write-Output "LOG: Complete App2Container Prerequisites"
+              # Create APP2C directory
+              New-Item -Path $FolderPath\APP2C -ItemType Directory -ErrorAction SilentlyContinue
+              # Download WinRM setup script
+              Invoke-WebRequest `
+                  https://app2container-release-us-east-1.s3.us-east-1.amazonaws.com/latest/windows/WinRMSetup.ps1 `
+                  -OutFile $FolderPath\APP2C\WinRMSetup.ps1
+              Invoke-WebRequest `
+                  https://raw.githubusercontent.com/Azure/azure-libraries-for-net/master/Samples/Asset/New-SelfSignedCertificateEx.ps1 `
+                  -OutFile $FolderPath\APP2C\New-SelfSignedCertificateEx.ps1
+              # Run WinRM setup script
+              do {
+                  $checkstatus = test-path $FolderPath\APP2C\New-SelfSignedCertificateEx.ps1
+                  Write-Output "LOG: Waiting for WinRM setup script download"
+                  Start-Sleep -Seconds 10
+              }
+              until ($checkstatus -eq 'True')
+              Set-Location -Path "$FolderPath\APP2C"
+              .\WinRMSetup.ps1
+            }
+            # Useful Locations
+            Write-Output "Log locations"
+            Write-Output "C:\Windows\System32\config\systemprofile\AppData\Local\Temp"
+            Write-Output "C:\ProgramData\Amazon\EC2Launch\log\"
+            # Stop logging
+            Stop-Transcript
+            </powershell>
+            <persist>true</persist>
+  asgwebserver:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${PrefixCode}-autoscalinggroup-webserver
+      LaunchTemplate:
+        LaunchTemplateName: !Sub ${PrefixCode}-launchtemplate-webservers
+        Version: !GetAtt ltpwebserver.LatestVersionNumber
+      MinSize: "1"
+      MaxSize: "1"
+      DesiredCapacity: "1"
+      TargetGroupARNs:
+        - !Ref ltg01
+      VPCZoneIdentifier:
+        - !Ref sbnpv01
+        - !Ref sbnpv02
+      Cooldown: "60"
+    DependsOn:
+      - mad01
+      - rdsmssql01
+      - ec2srv01
+  aspwebserver:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      PolicyType: TargetTrackingScaling
+      EstimatedInstanceWarmup: 100
+      AutoScalingGroupName: !Ref asgwebserver
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 90.0
+
+  ### Amazon Aurora (Target)
+  rdsaurorapgsql01:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      AutoMinorVersionUpgrade: true
+      BackupRetentionPeriod: 1
+      DatabaseName: !Sub ${PrefixCode}-aurora-postgresql-01
+      DBSubnetGroupName: !Ref sbgrdsmssql01
+      # Consider setting DeletionProtection to true for production environments
+      DeletionProtection: false
+      Engine: aurora-postgresql
+      EngineVersion: "15.3"
+      KmsKeyId: !GetAtt kmskey.Arn
+      MasterUsername: pgsqlsa
+      ManageMasterUserPassword : true
+      ServerlessV2ScalingConfiguration:
+        MaxCapacity: 8.0
+        MinCapacity: 1.0
+      StorageEncrypted: true
+      VpcSecurityGroupIds:
+        - !Ref scgdat01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-aurora-postgresql-01
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: database
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+    # Consider changing or deleting the UpdateReplacePolicy for production environments
+    UpdateReplacePolicy: Delete
+    Condition: DeployAurora
+
+  ### Juans Parameters
+  #TODO: Parameterise Names
+  SMParameterVarRawPath:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: BucketName
+      Type: String
+      Value: wtfgoeshere
+      Description: Application code uses this parameter for Amazon S3 upload
+      Tags:
+        Name: BucketName
+        provisioner: CFN
+        workshop: !Sub ${WorkShopTag}
+        resourcetype: parameter
+        customer: !Sub ${DepartmentTag}
+        environment: !Sub ${EnvironmentTag}
+        codeblock: !Sub ${PrefixCode}-resources
+  SMParameterVarRawPath:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: ConnectionString
+      Type: String
+      Value: wtfgoeshere
+      Description: Application code uses this parameter for Amazon S3 upload
+      Tags:
+        Name: ConnectionString
+        provisioner: CFN
+        workshop: !Sub ${WorkShopTag}
+        resourcetype: parameter
+        customer: !Sub ${DepartmentTag}
+        environment: !Sub ${EnvironmentTag}
+        codeblock: !Sub ${PrefixCode}-resources

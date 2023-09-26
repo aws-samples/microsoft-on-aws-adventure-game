@@ -27,36 +27,36 @@ MISSION 1
 S3 bucket name:			<s3bucket>
 source server IP address:	<sourceserverIPaddress>
 secret arn: 			<secretarn>
-application id:			FILL ME IN!
+application id:			**FILL ME IN**
 VPC ID:				<vpcid>
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
-MISSION 2
----------
-
-
-
 MISSION 3
+---------
+Aurora Server:			<auroraserver>
+Aurora authentication username: <aurorausername>
+Aurora authentication password:	<aurorapassword>
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+MISSION 4
 ---------
 Region:				<Region>
 AWS access key ID:		<awsaccesskeyid>
 AWS secret access key:		<awsaccesskeysecret>
 AWS KMS key ARN:		<awskmskeyarn>
 S3 bucket name:			<s3bucket>
+Output location:		**FILL ME IN**
 
-
-MISSION 4
----------
-
-
-
+-----------------------------------------------------------------------------------------------------------------------------------------------------
 MISSION 5
 ---------
 
 
 
+-----------------------------------------------------------------------------------------------------------------------------------------------------
 MISSION 6
 ---------
+
 
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
@@ -101,6 +101,3 @@ LOG LOCATIONS
 -------------
 C:\Windows\System32\config\systemprofile\AppData\Local\Temp
 C:\ProgramData\Amazon\EC2Launch\log\
-
-mission 4 - microservices extractor - donations service.......
-

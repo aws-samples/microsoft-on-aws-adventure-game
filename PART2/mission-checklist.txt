@@ -1,0 +1,106 @@
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+  __  __ ___ ____ ____ ___ ___  _   _    ____ _   _ _____ ____ _  ___     ___ ____ _____ 
+ |  \/  |_ _/ ___/ ___|_ _/ _ \| \ | |  / ___| | | | ____/ ___| |/ / |   |_ _/ ___|_   _|
+ | |\/| || |\___ \___ \| | | | |  \| | | |   | |_| |  _|| |   | ' /| |    | |\___ \ | |  
+ | |  | || | ___) |__) | | |_| | |\  | | |___|  _  | |__| |___| . \| |___ | | ___) || |  
+ |_|  |_|___|____/____/___\___/|_| \_|  \____|_| |_|_____\____|_|\_\_____|___|____/ |_|  
+                                                                                                            
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+ACCESS CREDENTIALS
+------------------
+Domain username:		<devboxusername>
+Domain password:		<devboxpassword>
+Domain name:			<devboxdomain>
+
+SQL Server:			<sqlserver>
+SQL authentication username:	<sqlusername>
+SQL authentication password:	<sqlpassword>
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+ORIENTATION
+-----------
+
+Current website:		<currentloadbalancerdns>
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+MISSION 1
+---------
+
+S3 bucket name:			<s3bucket>
+source server IP address:	<sourceserverIPaddress>
+secret arn: 			<secretarn>
+application id:			FILL ME IN!
+VPC ID:				<vpcid>
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+MISSION 2
+---------
+
+
+
+MISSION 3
+---------
+Region:				<Region>
+AWS access key ID:		<awsaccesskeyid>
+AWS secret access key:		<awsaccesskeysecret>
+AWS KMS key ARN:		<awskmskeyarn>
+S3 bucket name:			<s3bucket>
+
+
+MISSION 4
+---------
+
+
+
+MISSION 5
+---------
+
+
+
+MISSION 6
+---------
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+BACKUP PLANS
+------------
+Here's a list of commands you will hopefully not need.
+
+[01] Install AWS CLI
+msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi /quiet
+
+[02] Install Windows admin tools
+Install-WindowsFeature -Name RSAT -IncludeAllSubFeature
+
+[03] Install Chocolatey
+Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+[04] Install Dbeaver
+C:\ProgramData\\chocolatey\choco install dbeaver -y
+
+[05] Install Git
+C:\ProgramData\\chocolatey\choco install git -y
+$env:Path += ";C:\Program Files\Git\bin"
+
+[06] Install SQL Management Tools
+C:\ProgramData\\chocolatey\choco install sql-server-management-studio -y
+
+[07] Install Visual Studio Community Edition
+C:\ProgramData\\chocolatey\choco install visualstudio2022community -y
+C:\ProgramData\\chocolatey\choco install visualstudio2022-workload-netweb -y
+
+[08] Download and Extract App2Container
+$FolderPath = "C:\MISSION_PACK"
+Invoke-WebRequest -UseBasicParsing "https://app2container-release-us-east-1.s3.us-east-1.amazonaws.com/latest/windows/AWSApp2Container-installer-windows.zip" -OutFile $FolderPath\APP2C\AWSApp2Container-installer-windows.zip
+Expand-Archive -Path $FolderPath\APP2C\AWSApp2Container-installer-windows.zip -DestinationPath $FolderPath\APP2C\AWSApp2Container-installer-windows -Force
+
+[09] Download Microservices Extractor
+$FolderPath = "C:\MISSION_PACK"
+Invoke-WebRequest -UseBasicParsing "https://s3.us-west-2.amazonaws.com/aws.serviceextract.download/latest/windows/ServiceExtract.exe" -OutFile $FolderPath\MicroservicesExtractor
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+LOG LOCATIONS
+-------------
+C:\Windows\System32\config\systemprofile\AppData\Local\Temp
+C:\ProgramData\Amazon\EC2Launch\log\
+
+mission 4 - microservices extractor - donations service.......
+

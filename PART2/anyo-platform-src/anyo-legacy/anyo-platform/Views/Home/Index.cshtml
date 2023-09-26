@@ -1,0 +1,45 @@
+﻿@model IEnumerable<anyo_platform.Models.IntergalacticMissions>
+
+@{
+    ViewBag.Title = "Home Page";
+}
+
+<main>
+    <section class="row" aria-labelledby="aspnetTitle">
+        <h1 id="title">AnyO Current Missions</h1>
+        <p class="lead">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+        <p><a href="https://asp.net" class="btn btn-primary btn-md">Learn more &raquo;</a></p>
+    </section>
+
+    @if (Model != null)
+    {
+        <div class="row">
+            @foreach (var item in Model)
+            {
+                <div class="col-md-4">
+                    <div class="card" style="width: 18rem;">
+                        <img class="card-img-top" src="~/Content/images/placeholder.jpg">
+                        <div class="card-body">
+                            <h5 class="card-title">@item.Name</h5>
+                            <p class="card-text">@item.Description</p>
+                            <div class="progress" style="margin-bottom: 10px;">
+                                <div class="progress-bar" role="progressbar" aria-label="Basic example" aria-valuenow="@item.Current" aria-valuemin="0" aria-valuemax="100" style="width:@(item.Current)%;"></div>
+                            </div>
+                            <div>
+                                @Html.ActionLink("Donate", "Create", "IntergalacticDonations", new { id = item.Id }, new { @class = "btn btn-primary" })
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="row">
+            <div class="col-md-12">
+                <p>There are no missions currently available.</p>
+            </div>
+        </div>
+    }
+</main>

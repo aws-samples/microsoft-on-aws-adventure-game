@@ -96,6 +96,15 @@ Expand-Archive -Path $FolderPath\APP2C\AWSApp2Container-installer-windows.zip -D
 $FolderPath = "C:\MISSION_PACK"
 Invoke-WebRequest -UseBasicParsing "https://s3.us-west-2.amazonaws.com/aws.serviceextract.download/latest/windows/ServiceExtract.exe" -OutFile $FolderPath\MicroservicesExtractor
 
+[10] Old Web Server files (run on .NET framework web server)
+Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+C:\ProgramData\\chocolatey\choco install git -y
+$env:Path += ";C:\Program Files\Git\bin"
+C:\ProgramData\\chocolatey\choco install git -y
+$env:Path += ";C:\Program Files\Git\bin"
+git clone https://github.com/aws-samples/microsoft-on-aws-adventure-game.git C:\inetpub\anyo
+# Move files to correct location
+
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 LOG LOCATIONS
 -------------

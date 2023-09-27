@@ -62,7 +62,7 @@ MISSION 6
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 BACKUP PLANS
 ------------
-Here's a list of commands you will hopefully not need.
+Here's a list of commands you will hopefully NOT need.
 
 [01] Install AWS CLI
 msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi /quiet
@@ -104,6 +104,16 @@ C:\ProgramData\\chocolatey\choco install git -y
 $env:Path += ";C:\Program Files\Git\bin"
 git clone https://github.com/aws-samples/microsoft-on-aws-adventure-game.git C:\inetpub\anyo
 # Move files to correct location
+
+[11] Download and Extract SCT and drivers
+$FolderPath = "C:\MISSION_PACK"
+New-Item -Path $FolderPath\SCT -ItemType Directory -Force
+(New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/publicsctdownload/Windows/aws-schema-conversion-tool-1.0.latest.zip", "$FolderPath\SCT\aws-schema-conversion-tool-1.0.latest.zip")
+Expand-Archive -Path $FolderPath\SCT\aws-schema-conversion-tool-1.0.latest.zip -DestinationPath $FolderPath\SCT -Force
+New-Item -Path C:\MISSION_PACK\SCT\DatabaseDrivers -ItemType Directory -Force
+(New-Object System.Net.WebClient).DownloadFile("https://go.microsoft.com/fwlink/?linkid=2245438", "$FolderPath\SCT\DataBaseDrivers\sqljdbc_12.4.1.0_enu.zip")
+Expand-Archive -Path $FolderPath\SCT\DatabaseDrivers\sqljdbc_12.4.1.0_enu.zip -DestinationPath $FolderPath\SCT\DatabaseDrivers -Force
+(New-Object System.Net.WebClient).DownloadFile("https://jdbc.postgresql.org/download/postgresql-42.2.19.jar", "$FolderPath\SCT\DatabaseDrivers\postgresql-42.2.19.jar")
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 LOG LOCATIONS

@@ -27,42 +27,42 @@ MISSION 1
 S3 bucket name:			<s3bucket>
 source server IP address:	<sourceserverIPaddress>
 secret arn: 			<secretarn>
-application id:			FILL ME IN!
+application id:			**FILL ME IN**
 VPC ID:				<vpcid>
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
-MISSION 2
----------
-
-
-
 MISSION 3
+---------
+Aurora Server:			<auroraserver>
+Aurora authentication username: <aurorausername>
+Aurora authentication password:	<aurorapassword>
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+MISSION 4
 ---------
 Region:				<Region>
 AWS access key ID:		<awsaccesskeyid>
 AWS secret access key:		<awsaccesskeysecret>
 AWS KMS key ARN:		<awskmskeyarn>
 S3 bucket name:			<s3bucket>
+Output location:		**FILL ME IN**
 
-
-MISSION 4
----------
-
-
-
+-----------------------------------------------------------------------------------------------------------------------------------------------------
 MISSION 5
 ---------
 
 
 
+-----------------------------------------------------------------------------------------------------------------------------------------------------
 MISSION 6
 ---------
+
 
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 BACKUP PLANS
 ------------
-Here's a list of commands you will hopefully not need.
+Here's a list of commands you will hopefully NOT need.
 
 [01] Install AWS CLI
 msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi /quiet
@@ -96,11 +96,27 @@ Expand-Archive -Path $FolderPath\APP2C\AWSApp2Container-installer-windows.zip -D
 $FolderPath = "C:\MISSION_PACK"
 Invoke-WebRequest -UseBasicParsing "https://s3.us-west-2.amazonaws.com/aws.serviceextract.download/latest/windows/ServiceExtract.exe" -OutFile $FolderPath\MicroservicesExtractor
 
+[10] Old Web Server files (run on .NET framework web server)
+Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+C:\ProgramData\\chocolatey\choco install git -y
+$env:Path += ";C:\Program Files\Git\bin"
+C:\ProgramData\\chocolatey\choco install git -y
+$env:Path += ";C:\Program Files\Git\bin"
+git clone https://github.com/aws-samples/microsoft-on-aws-adventure-game.git C:\inetpub\anyo
+# Move files to correct location
+
+[11] Download and Extract SCT and drivers
+$FolderPath = "C:\MISSION_PACK"
+New-Item -Path $FolderPath\SCT -ItemType Directory -Force
+(New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/publicsctdownload/Windows/aws-schema-conversion-tool-1.0.latest.zip", "$FolderPath\SCT\aws-schema-conversion-tool-1.0.latest.zip")
+Expand-Archive -Path $FolderPath\SCT\aws-schema-conversion-tool-1.0.latest.zip -DestinationPath $FolderPath\SCT -Force
+New-Item -Path C:\MISSION_PACK\SCT\DatabaseDrivers -ItemType Directory -Force
+(New-Object System.Net.WebClient).DownloadFile("https://go.microsoft.com/fwlink/?linkid=2245438", "$FolderPath\SCT\DataBaseDrivers\sqljdbc_12.4.1.0_enu.zip")
+Expand-Archive -Path $FolderPath\SCT\DatabaseDrivers\sqljdbc_12.4.1.0_enu.zip -DestinationPath $FolderPath\SCT\DatabaseDrivers -Force
+(New-Object System.Net.WebClient).DownloadFile("https://jdbc.postgresql.org/download/postgresql-42.2.19.jar", "$FolderPath\SCT\DatabaseDrivers\postgresql-42.2.19.jar")
+
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 LOG LOCATIONS
 -------------
 C:\Windows\System32\config\systemprofile\AppData\Local\Temp
 C:\ProgramData\Amazon\EC2Launch\log\
-
-mission 4 - microservices extractor - donations service.......
-

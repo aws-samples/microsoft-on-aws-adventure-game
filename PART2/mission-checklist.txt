@@ -12,9 +12,6 @@ Domain username:		<devboxusername>
 Domain password:		<devboxpassword>
 Domain name:			<devboxdomain>
 
-SQL Server:			<sqlserver>
-SQL authentication username:	<sqlusername>
-SQL authentication password:	<sqlpassword>
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 ORIENTATION
 -----------
@@ -33,9 +30,14 @@ VPC ID:				<vpcid>
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 MISSION 3
 ---------
+SQL Server:			<sqlserver>
+SQL Server port			1433
+SQL authentication username:	<sqlusername>
+SQL authentication password:	<sqlpassword>
+
 Aurora Server:			<auroraserver>
-Server port:			3306
-Database:			postgres
+Aurora Server port:			3306
+Aurora database:			postgres
 Aurora authentication username: <aurorausername>
 Aurora authentication password:	<aurorapassword>
 

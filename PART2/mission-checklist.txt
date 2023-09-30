@@ -34,6 +34,8 @@ VPC ID:				<vpcid>
 MISSION 3
 ---------
 Aurora Server:			<auroraserver>
+Server port:			3306
+Database:			postgres
 Aurora authentication username: <aurorausername>
 Aurora authentication password:	<aurorapassword>
 

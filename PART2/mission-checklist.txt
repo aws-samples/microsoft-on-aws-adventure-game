@@ -30,12 +30,12 @@ VPC ID:				<vpcid>
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 MISSION 3
 ---------
-SQL Server:			<sqlserver>
+SQL Server name:			<sqlserver>
 SQL Server port			1433
 SQL authentication username:	<sqlusername>
 SQL authentication password:	<sqlpassword>
 
-Aurora Server:			<auroraserver>
+Aurora Server name:			<auroraserver>
 Aurora Server port:			3306
 Aurora database:			postgres
 Aurora authentication username: <aurorausername>

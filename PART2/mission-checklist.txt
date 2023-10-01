@@ -22,7 +22,7 @@ MISSION 1
 ---------
 
 S3 bucket name:			<s3bucket>
-source server IP address:	<sourceserverIPaddress>
+source server IP address:	retrieve using awscli as instructed in workshop
 secret arn: 			<secretarn>
 application id:			**FILL ME IN**
 VPC ID:				<vpcid>

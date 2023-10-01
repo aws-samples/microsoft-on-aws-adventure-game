@@ -30,6 +30,8 @@ VPC ID:				<vpcid>
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 MISSION 3
 ---------
+Current website:		<currentloadbalancerdns>
+
 SQL Server:			<sqlserver>
 SQL Server port			1433
 SQL authentication username:	<sqlusername>
@@ -91,16 +93,19 @@ C:\ProgramData\\chocolatey\choco install sql-server-management-studio -y
 C:\ProgramData\\chocolatey\choco install visualstudio2022community -y
 C:\ProgramData\\chocolatey\choco install visualstudio2022-workload-netweb -y
 
-[08] Download and Extract App2Container
+[08] Install Google Chrome
+C:\ProgramData\\chocolatey\choco install googlechrome -y
+
+[09] Download and Extract App2Container
 $FolderPath = "C:\MISSION_PACK"
 Invoke-WebRequest -UseBasicParsing "https://app2container-release-us-east-1.s3.us-east-1.amazonaws.com/latest/windows/AWSApp2Container-installer-windows.zip" -OutFile $FolderPath\APP2C\AWSApp2Container-installer-windows.zip
 Expand-Archive -Path $FolderPath\APP2C\AWSApp2Container-installer-windows.zip -DestinationPath $FolderPath\APP2C\AWSApp2Container-installer-windows -Force
 
-[09] Download Microservices Extractor
+[10] Download Microservices Extractor
 $FolderPath = "C:\MISSION_PACK"
 Invoke-WebRequest -UseBasicParsing "https://s3.us-west-2.amazonaws.com/aws.serviceextract.download/latest/windows/ServiceExtract.exe" -OutFile $FolderPath\MicroservicesExtractor
 
-[10] Old Web Server files (run on .NET framework web server)
+[11] Old Web Server files (run on .NET framework web server)
 Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
 C:\ProgramData\\chocolatey\choco install git -y
 $env:Path += ";C:\Program Files\Git\bin"
@@ -109,7 +114,7 @@ $env:Path += ";C:\Program Files\Git\bin"
 git clone https://github.com/aws-samples/microsoft-on-aws-adventure-game.git C:\inetpub\anyo
 # Move files to correct location
 
-[11] Download and Extract SCT and drivers
+[12] Download and Extract SCT and drivers
 $FolderPath = "C:\MISSION_PACK"
 New-Item -Path $FolderPath\SCT -ItemType Directory -Force
 (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/publicsctdownload/Windows/aws-schema-conversion-tool-1.0.latest.zip", "$FolderPath\SCT\aws-schema-conversion-tool-1.0.latest.zip")

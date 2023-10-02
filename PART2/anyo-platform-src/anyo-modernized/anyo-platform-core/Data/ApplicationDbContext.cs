@@ -8,7 +8,7 @@ namespace anyo_platform_core.Data
     {
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
         {
-            Database.EnsureCreated();
+
         }
 
         public DbSet<anyo_platform.Models.IntergalacticGroup> IntergalacticGroups { get; set; } = default!;

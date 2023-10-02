@@ -11,9 +11,11 @@ namespace anyo_platform_core
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            //PostgreSQL Connection String
             var connectionString = builder.Configuration.GetConnectionString("PostgreSQLConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
             builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connectionString).UseLowerCaseNamingConvention());
 
+            //Microsoft SQL Connection String
             //var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
             //builder.Services.AddDbContext<ApplicationDbContext>(options =>
             //    options.UseSqlServer(connectionString));

@@ -23,12 +23,6 @@
         <th>
             @Html.DisplayNameFor(model => model.Status)
         </th>
-        <th>
-            @Html.DisplayNameFor(model => model.CreateDate)
-        </th>
-        <th>
-            @Html.DisplayNameFor(model => model.EndDate)
-        </th>
         <th></th>
     </tr>
 
@@ -47,15 +41,9 @@
             @Html.DisplayFor(modelItem => item.Status)
         </td>
         <td>
-            @Html.DisplayFor(modelItem => item.CreateDate)
-        </td>
-        <td>
-            @Html.DisplayFor(modelItem => item.EndDate)
-        </td>
-        <td>
-            @Html.ActionLink("Edit", "Edit", new { id=item.Id }) |
-            @Html.ActionLink("Details", "Details", new { id=item.Id }) |
-            @Html.ActionLink("Delete", "Delete", new { id=item.Id })
+            @Html.ActionLink("Edit", "Edit", new { id = item.Id }) |
+            @Html.ActionLink("Details", "Details", new { id = item.Id }) |
+            @Html.ActionLink("Donate", "Create", "IntergalacticDonation", new { id = item.Id })
         </td>
     </tr>
 }

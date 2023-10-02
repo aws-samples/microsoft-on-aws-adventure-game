@@ -25,7 +25,7 @@ namespace anyo_platform_core.Controllers
             _context = context;
         }
 
-        public async Task<IActionResult> Index()
+        public async Task<IActionResult> MicroServiceIndex()
         {
             string url = "https://localhost:7704/Donations/Get";
 
@@ -41,7 +41,7 @@ namespace anyo_platform_core.Controllers
             }
         }
 
-        public async Task<IActionResult> OldIndex()
+        public async Task<IActionResult> Index()
         {
             var applicationDbContext = _context.IntergalacticDonation;
             var indexViewModel = new DonationsViewModel();

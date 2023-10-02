@@ -13,7 +13,7 @@ namespace anyo_platform.Controllers
 
         public ActionResult Index()
         {
-            return View(db.IntergalaticMissions.ToList());
+            return View(db.IntergalacticMissions.ToList());
         }
 
         public ActionResult About()

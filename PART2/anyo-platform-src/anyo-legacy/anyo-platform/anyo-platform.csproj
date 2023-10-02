@@ -171,7 +171,7 @@
     <Compile Include="App_Start\Startup.Auth.cs" />
     <Compile Include="Controllers\AccountController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
-    <Compile Include="Controllers\IntergalacticDonationsController.cs" />
+    <Compile Include="Controllers\IntergalacticDonationController.cs" />
     <Compile Include="Controllers\IntergalacticGroupsController.cs" />
     <Compile Include="Controllers\IntergalacticPackagesController.cs" />
     <Compile Include="Controllers\IntergalacticMissionsController.cs" />
@@ -185,6 +185,7 @@
     <Compile Include="Models\IntergalacticPackages.cs" />
     <Compile Include="Models\IntergalacticMissions.cs" />
     <Compile Include="Models\ManageViewModels.cs" />
+    <Compile Include="Models\ViewModels\DonationsViewModel.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Startup.cs" />
   </ItemGroup>
@@ -215,8 +216,6 @@
     <Content Include="Scripts\bootstrap.esm.min.js" />
     <Content Include="Scripts\bootstrap.js" />
     <Content Include="Scripts\bootstrap.min.js" />
-    <Content Include="PlatformClassDiagram.cd" />
-    <Content Include="ClassDiagram1.cd" />
     <None Include="Scripts\jquery-3.4.1.intellisense.js" />
     <Content Include="Scripts\jquery-3.4.1.js" />
     <Content Include="Scripts\jquery-3.4.1.min.js" />
@@ -261,9 +260,8 @@
     <Content Include="Views\IntergalacticPackages\Details.cshtml" />
     <Content Include="Views\IntergalacticPackages\Edit.cshtml" />
     <Content Include="Views\IntergalacticPackages\Index.cshtml" />
-    <Content Include="Views\IntergalacticDonations\Create.cshtml" />
-    <Content Include="Views\IntergalacticDonations\Details.cshtml" />
-    <Content Include="Views\IntergalacticDonations\Index.cshtml" />
+    <Content Include="Views\IntergalacticDonation\Create.cshtml" />
+    <Content Include="Views\IntergalacticDonation\Index.cshtml" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="App_Data\" />

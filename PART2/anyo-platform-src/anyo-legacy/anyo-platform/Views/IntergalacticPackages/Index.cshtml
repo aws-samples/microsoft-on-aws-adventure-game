@@ -23,9 +23,6 @@
         <th>
             @Html.DisplayNameFor(model => model.PackageType)
         </th>
-        <th>
-            @Html.DisplayNameFor(model => model.CreateDate)
-        </th>
         <th></th>
     </tr>
 
@@ -42,9 +39,6 @@
         </td>
         <td>
             @Html.DisplayFor(modelItem => item.PackageType)
-        </td>
-        <td>
-            @Html.DisplayFor(modelItem => item.CreateDate)
         </td>
         <td>
             @Html.ActionLink("Edit", "Edit", new { id=item.Id }) |

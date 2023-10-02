@@ -31,9 +31,7 @@ namespace anyo_platform.Models
         public int GroupId { get; set; }
         public virtual IntergalacticGroup Group { get; set; }
 
-        public virtual ICollection<IntergalacticDonation> PackagesDonated { get; set; }
-
-        public DateTime CreateDate { get; set; } = DateTime.Now;
-        public DateTime EndDate { get; set; } = DateTime.Now.AddDays(30);
+        [NotMapped]
+        public virtual List<IntergalacticDonation> PackagesDonated { get; set; } = new List<IntergalacticDonation>();
     }
 }

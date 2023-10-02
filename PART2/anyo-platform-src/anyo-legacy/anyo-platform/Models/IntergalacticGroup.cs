@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Web;
 using System.ComponentModel;
+using Microsoft.AspNet.Identity.EntityFramework;
 
 namespace anyo_platform.Models
 {
@@ -30,6 +31,6 @@ namespace anyo_platform.Models
         public string LeaderId { get; set; }
         public virtual ApplicationUser Leader { get; set; }
 
-        public virtual ICollection<IntergalacticMissions> Missions { get; set; }
+        public virtual List<IntergalacticMissions> Missions { get; set; } = new List<IntergalacticMissions>();
     }
 }

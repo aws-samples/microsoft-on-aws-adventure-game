@@ -25,8 +25,5 @@ namespace anyo_platform.Models
         public string PackageContents { get; set; }
         public string PackageArt { get; set; }
         public PackageType PackageType { get; set; }
-
-
-        public DateTime CreateDate { get; set; } = DateTime.Now;
     }
 }

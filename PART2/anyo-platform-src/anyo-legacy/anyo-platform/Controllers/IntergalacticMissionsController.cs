@@ -17,7 +17,7 @@ namespace anyo_platform.Controllers
         // GET: IntergalaticMissions
         public ActionResult Index()
         {
-            return View(db.IntergalaticMissions.ToList());
+            return View(db.IntergalacticMissions.ToList());
         }
 
         // GET: IntergalaticMissions/Details/5
@@ -27,11 +27,17 @@ namespace anyo_platform.Controllers
             {
                 return new HttpStatusCodeResult(HttpStatusCode.BadRequest);
             }
-            IntergalacticMissions intergalaticMissions = db.IntergalaticMissions.Find(id);
+
+            IntergalacticMissions intergalaticMissions = db.IntergalacticMissions.Find(id);
+
             if (intergalaticMissions == null)
             {
                 return HttpNotFound();
             }
+
+            intergalaticMissions.PackagesDonated = db.IntergalacticDonation.Where(m => m.MissionId == intergalaticMissions.Id).ToList();
+
+
             return View(intergalaticMissions);
         }
 
@@ -51,10 +57,7 @@ namespace anyo_platform.Controllers
         {
             if (ModelState.IsValid)
             {
-                intergalaticMissions.CreateDate = DateTime.Now;
-                intergalaticMissions.EndDate = DateTime.Now.AddDays(31);
-
-                db.IntergalaticMissions.Add(intergalaticMissions);
+                db.IntergalacticMissions.Add(intergalaticMissions);
                 db.SaveChanges();
                 return RedirectToAction("Index");
             }
@@ -70,7 +73,7 @@ namespace anyo_platform.Controllers
             {
                 return new HttpStatusCodeResult(HttpStatusCode.BadRequest);
             }
-            IntergalacticMissions intergalaticMissions = db.IntergalaticMissions.Find(id);
+            IntergalacticMissions intergalaticMissions = db.IntergalacticMissions.Find(id);
             if (intergalaticMissions == null)
             {
                 return HttpNotFound();
@@ -85,7 +88,7 @@ namespace anyo_platform.Controllers
         // more details see https://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult Edit([Bind(Include = "Id,Name,Description,Target,Banner,Status,CreateDate,EndDate,GroupId")] IntergalacticMissions intergalaticMissions)
+        public ActionResult Edit([Bind(Include = "Id,Name,Description,Target,Banner,Status,GroupId")] IntergalacticMissions intergalaticMissions)
         {
             if (ModelState.IsValid)
             {
@@ -105,7 +108,7 @@ namespace anyo_platform.Controllers
             {
                 return new HttpStatusCodeResult(HttpStatusCode.BadRequest);
             }
-            IntergalacticMissions intergalaticMissions = db.IntergalaticMissions.Find(id);
+            IntergalacticMissions intergalaticMissions = db.IntergalacticMissions.Find(id);
             if (intergalaticMissions == null)
             {
                 return HttpNotFound();
@@ -118,8 +121,8 @@ namespace anyo_platform.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult DeleteConfirmed(int id)
         {
-            IntergalacticMissions intergalaticMissions = db.IntergalaticMissions.Find(id);
-            db.IntergalaticMissions.Remove(intergalaticMissions);
+            IntergalacticMissions intergalaticMissions = db.IntergalacticMissions.Find(id);
+            db.IntergalacticMissions.Remove(intergalaticMissions);
             db.SaveChanges();
             return RedirectToAction("Index");
         }

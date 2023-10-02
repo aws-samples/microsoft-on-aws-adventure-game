@@ -49,9 +49,7 @@ namespace anyo_platform.Controllers
         public ActionResult Create([Bind(Include = "Id,Name,PackageContents,PackageArt,PackageType")] IntergalacticPackages intergalacticPackages)
         {
             if (ModelState.IsValid)
-            {
-                intergalacticPackages.CreateDate = DateTime.Now;
-                
+            {                
                 db.IntergalacticPackages.Add(intergalacticPackages);
                 db.SaveChanges();
                 return RedirectToAction("Index");
@@ -80,7 +78,7 @@ namespace anyo_platform.Controllers
         // more details see https://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult Edit([Bind(Include = "Id,Name,PackageContents,PackageArt,PackageType,CreateDate")] IntergalacticPackages intergalacticPackages)
+        public ActionResult Edit([Bind(Include = "Id,Name,PackageContents,PackageArt,PackageType")] IntergalacticPackages intergalacticPackages)
         {
             if (ModelState.IsValid)
             {

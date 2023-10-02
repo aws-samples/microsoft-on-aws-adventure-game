@@ -19,19 +19,10 @@ namespace anyo_platform.Models
         [Range(1, 100, ErrorMessage = "Quantity must be between 1 and 100")]
         public int Quantity { get; set; }
 
-        [ForeignKey("Mission")]
         public int MissionId { get; set; }
-        public virtual IntergalacticMissions Mission { get; set; }
 
-        [ForeignKey("Donor")]
-        public string DonorId { get; set; }
-        public virtual ApplicationUser Donor { get; set; }
+        public string DonorName { get; set; }
 
-
-        [ForeignKey("Package")]
         public int PackageId { get; set; }
-        public virtual IntergalacticPackages Package { get; set; }
-
-        public DateTime CreateDate { get; set; } = DateTime.Now;
     }
 }

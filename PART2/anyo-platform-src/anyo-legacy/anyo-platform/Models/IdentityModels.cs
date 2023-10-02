@@ -32,10 +32,10 @@ namespace anyo_platform.Models
 
         public System.Data.Entity.DbSet<anyo_platform.Models.IntergalacticGroup> IntergalacticGroups { get; set; }
 
-        public System.Data.Entity.DbSet<anyo_platform.Models.IntergalacticMissions> IntergalaticMissions { get; set; }
+        public System.Data.Entity.DbSet<anyo_platform.Models.IntergalacticMissions> IntergalacticMissions { get; set; }
 
         public System.Data.Entity.DbSet<anyo_platform.Models.IntergalacticPackages> IntergalacticPackages { get; set; }
 
-        public System.Data.Entity.DbSet<anyo_platform.Models.IntergalacticDonation> IntergalacticDonations { get; set; }
+        public System.Data.Entity.DbSet<anyo_platform.Models.IntergalacticDonation> IntergalacticDonation { get; set; }
     }
 }

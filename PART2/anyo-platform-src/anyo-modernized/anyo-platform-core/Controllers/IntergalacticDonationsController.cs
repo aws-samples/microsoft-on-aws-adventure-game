@@ -11,9 +11,11 @@ using System.Security.Claims;
 using anyo_platform_core.Data.ViewModels;
 using System.Security.Policy;
 using Newtonsoft.Json;
+using Microsoft.AspNetCore.Authorization;
 
 namespace anyo_platform_core.Controllers
 {
+    [Authorize]
     public class IntergalacticDonationsController : Controller
     {
         private readonly ApplicationDbContext _context;
@@ -76,12 +78,19 @@ namespace anyo_platform_core.Controllers
         {
             if (ModelState.IsValid)
             {
+                var mission = _context.IntergalacticMissions.Find(intergalacticDonation.MissionId);
+
+                if (mission != null)
+                {
+                    mission.Current += intergalacticDonation.Quantity;
+                }
+
                 _context.Add(intergalacticDonation);
                 await _context.SaveChangesAsync();
                 return RedirectToAction(nameof(Index));
             }
 
-            ViewData["DonorName"] = User.Identity.Name;
+            ViewData["DonorName"] = intergalacticDonation.DonorName;
             ViewData["MissionId"] = intergalacticDonation.MissionId;
             ViewData["PackageId"] = new SelectList(_context.IntergalacticPackages, "Id", "Name", intergalacticDonation.PackageId);
             return View(intergalacticDonation);

@@ -9,7 +9,8 @@ Metadata:
           default: Deployment Options
         Parameters:
           - DeployNLB
-          - DeployAurora
+          - SQLDbName
+          - AuroraDbName
       - Label:
           default: Source code repositories
         Parameters:
@@ -43,20 +44,21 @@ Parameters:
     AllowedValues:
       - "true"
       - "false"
-  DeployAurora:
+  SQLDbName:
     Type: String
-    Description: Select "true" if you plan to complete the database refactoring mission
-    Default: "false"
-    AllowedValues:
-      - "true"
-      - "false"
+    Description: Name of SQL database created by Legacy Web application
+    Default: anyodb
+  AuroraDbName:
+    Type: String
+    Description: Name of Aurora database created by Modern Web application
+    Default: postgres
   S3SourceBucket:
     Type: String
     Default: anyowebserverfilesbuwdev
     Description: Amazon S3 bucket that contains source web server files
   GitRepo:
     Type: String
-    Default: "https://github.com/hansmohob/anyo.git"
+    Default: "https://github.com/aws-samples/microsoft-on-aws-adventure-game.git"
     Description: Enter the git repo url which contains the workshop source code
   VpcCidr:
     Type: String
@@ -104,7 +106,6 @@ Parameters:
     Description: Enter AWS Workshop abbreviated tag value
 Conditions:
   DeployNLB: !Equals [!Ref DeployNLB, "true"]
-  DeployAurora: !Equals [!Ref DeployAurora, "true"]
 Resources:
 
 ### AWS Key Management Service (Scaffold)
@@ -162,6 +163,11 @@ Resources:
     Type: AWS::KMS::Alias
     Properties:
       AliasName: !Sub alias/${PrefixCode}-keyvault-cmk
+      TargetKeyId: !Ref kmskey
+  kmskeyaliasMicroExtract:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/application-transformation-keyvault-cmk
       TargetKeyId: !Ref kmskey
 
   ### Amazon S3 Bucket (Scaffold)
@@ -913,6 +919,11 @@ Resources:
           FromPort: 445
           ToPort: 445
           SourceSecurityGroupId: !Ref scgapp01
+        - Description: Allow Aurora traffic from app tier
+          IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref scgapp01
       SecurityGroupEgress:
         - Description: allow all traffic outbound
           IpProtocol: "-1"
@@ -934,6 +945,24 @@ Resources:
           Value: !Sub ${EnvironmentTag}
         - Key: codeblock
           Value: !Sub ${PrefixCode}-resources
+  scgdat01DMSSQL:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow DMS Replication instance SQL traffic
+      GroupId: !GetAtt scgdat01.GroupId
+      IpProtocol: tcp
+      FromPort: 1433
+      ToPort: 1433
+      SourceSecurityGroupId: !Ref scgdat01
+  scgdat01DMSAurora:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow DMS Replication instance Aurora traffic
+      GroupId: !GetAtt scgdat01.GroupId
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      SourceSecurityGroupId: !Ref scgdat01
 
   ### AWS Managed Microsoft AD (Source)
   smsmmad01:
@@ -1085,11 +1114,40 @@ Resources:
         SecretStringTemplate: '{"username": "sqladmin","authentication": "SQL Server Authentication"}'
         GenerateStringKey: password
         PasswordLength: 12
+        # additional characters excluded for XML(see XML docs) 
         ExcludeCharacters: '"@/\&<>;,[]{}()?*=!''`:$'
         RequireEachIncludedType: true
       Tags:
         - Key: Name
           Value: !Sub ${PrefixCode}-secret-sql-admin
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  smsauroraadmin:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${PrefixCode}-secret-aurora-admin
+      Description: credentials for RDS for Aurora PostreSQL
+      KmsKeyId: !GetAtt kmskey.Arn
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "pgsqlsa","authentication": "Aurora PostreSQL Authentication"}'
+        GenerateStringKey: password
+        PasswordLength: 12
+        # additional characters excluded for XML(see XML docs) and DMS (https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Endpoints.Creating.html)
+        ExcludeCharacters: '+%"@/\&<>;,[]{}()?*=!''`:$'
+        RequireEachIncludedType: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-secret-aurora-admin
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -1222,6 +1280,18 @@ Resources:
                 Resource:
                   - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:*
                   - !Sub arn:aws:ssm:${AWS::Region}::document/AWS-StartPortForwardingSession
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2smp
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - ssm:GetParameters
+                  - ssm:GetParameter
+                  - ssm:PutParameter
+                Resource:
+                  - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/BucketName
+                  - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ConnectionString
         - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2secrets
           PolicyDocument:
             Version: 2012-10-17
@@ -1233,7 +1303,42 @@ Resources:
                 Resource:
                   - !Ref smsmmad01
                   - !Ref smssqladmin
-        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2S3
+                  - !Ref smsawscli
+                  - !Ref smsauroraadmin
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-dlwebfiles
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${S3SourceBucket}
+                  - !Sub arn:${AWS::Partition}:s3:::${S3SourceBucket}/*
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2S3all
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListAllMyBuckets
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::*
+        #kms:DescribeKey used to fetch KMS key arn for Microservice Extractor instructions
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2kmskey
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:DescribeKey
+                Resource:
+                  - !GetAtt kmskey.Arn
+          # App2Container IAM Policies
+          # https://docs.aws.amazon.com/app2container/latest/UserGuide/iam-a2c.html
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-App2Cs3
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -1254,27 +1359,7 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:s3:::${s3bucket}
                   - !Sub arn:${AWS::Partition}:s3:::${s3bucket}/*
-        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2S3all
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:ListAllMyBuckets
-                Resource:
-                  - !Sub arn:${AWS::Partition}:s3:::*
-        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2kmskey
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - kms:Decrypt
-                Resource:
-                  - !GetAtt kmskey.Arn
-          # App2Container IAM Role 
-          # https://docs.aws.amazon.com/app2container/latest/UserGuide/iam-a2c.html
-        - PolicyName: !Sub ${PrefixCode}-iampolicy-App2Container
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-App2Call
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -1436,20 +1521,16 @@ Resources:
           if (-not (Test-Path C:\SSMAgent_latest.exe)) {
               Write-Output "LOG: Installing/upgrading SSM Agent"
               [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
-              $progressPreference = 'silentlyContinue'
-              Invoke-WebRequest `
-                  https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe `
-                  -OutFile C:\SSMAgent_latest.exe
+              (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
               Start-Process `
                 -FilePath C:\SSMAgent_latest.exe `
-                -ArgumentList "/S"
+                -ArgumentList "/S" `
+                -Wait
           }
           # Install/upgrade SSM Agent Session Manager Plugin
           if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
-              Invoke-WebRequest `
-                https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe `
-                -OutFile C:\SessionManagerPluginSetup.exe 
-              Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
+            (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe", "C:\SessionManagerPluginSetup.exe") 
+            Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
           }
           # Disable IE ESC
           $IEESCRegKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
@@ -1457,32 +1538,81 @@ Resources:
               Write-Output "LOG: Disabling Internet Explorer ESC"
               Set-ItemProperty -Path $IEESCRegKey -Name "IsInstalled" -Value 0
             }
-          # Apply AWS Systems Manager Fleet Manager Powershell Interface fix
-          if (-not (Test-Path "C:\Program Files\WindowsPowerShell\Modules\PSReadline\2.2.6")) {
-                Write-Output "LOG: Applying AWS Systems Manager Fleet Manager Powershell Interface fix"
-                Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
-                Save-Module -Name PowerShellGet -Path 'C:\Program Files\WindowsPowerShell\Modules' -Force -Confirm:$false
-                Install-Module -Name PSReadLine -Scope AllUsers -Force -Confirm:$false
-            }
           # Install AWSCLIv2
-          if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2")) {
+          if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2\aws.exe")) {
             Write-Output "LOG: Intalling AWSCLIv2"
-            msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi /quiet
+            Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "https://awscli.amazonaws.com/AWSCLIV2.msi", "/quiet" -Wait
             }
           # Install Admin tools
           if ((Get-WindowsFeature RSAT-AD-Tools).installed -ne 'True') {
             Write-Output "LOG: installing admin tools"
-            Install-WindowsFeature -Name RSAT -IncludeAllSubFeature
+            Install-WindowsFeature -Name RSAT-AD-Tools -IncludeAllSubFeature
+          }
+          # Install .NET Framework 4.8
+          if ((Get-ItemPropertyValue -Path 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -Name Version) -notlike "4.8.*") {
+          (New-Object System.Net.WebClient).DownloadFile("https://go.microsoft.com/fwlink/?linkid=2088631", "C:\dot-net-4.8-setup.exe") 
+          do {
+                Write-Output "LOG: Installing .NET Framework 4.8"
+                Start-Process -FilePath "C:\dot-net-4.8-setup.exe" -ArgumentList "/q" -Wait
+             }
+          until ((Get-ItemPropertyValue -Path 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -Name Version) -like "4.8.*")
+          Write-Output "LOG: .NET Framework 4.8 has been installed" 
           }
           # Install Chocolatey
           if (-not (Test-Path C:\ProgramData\\chocolatey)) {
               Write-Output "LOG: installing Chocolatey"
+              # Downgrade chocolatey version to avoid .NET 4.8 error
+              # $env:chocolateyVersion = '1.4.0'
               Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          }
+          # Install Software Packages
+          $Installations = @(
+              @{
+                  Software = "DBeaver Corp"
+                  PackageName = "dbeaver"
+              },
+              @{
+                  Software = "Google Chrome"
+                  PackageName = "googlechrome"
+              },
+              @{
+                  Software = "Git"
+                  PackageName = "git"
+                  PathToAdd = "C:\Program Files\Git\bin"
+              },
+              @{
+                  Software = "SQL Server Management Studio"
+                  PackageName = "sql-server-management-studio"
+              },
+              @{
+                  Software = "vs_communityx64msi"
+                  PackageName = "visualstudio2022community"
+              },
+              @{
+                  Software = "vs_communityx64msi"
+                  PackageName = "visualstudio2022-workload-netweb"
+              }
+          )
+          foreach ($app in $Installations) {
+              $Installed = $null -ne (Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -eq $app.Software })
+              if (-not $Installed) {
+                  Write-Output "LOG: Installing $($app.Software)"
+                  $installProcess = Start-Process -FilePath "choco" -ArgumentList "install $($app.PackageName) --no-progress -y" -PassThru -RedirectStandardError .\choco_errors.log -Wait
+                  if ($app.PathToAdd) {
+                      $env:Path += ";$($app.PathToAdd)"
+                  }
+                  # Relay error messages
+                  if ($installProcess.ExitCode -ne 0) {
+                      $errorLogContent = Get-Content .\choco_errors.log
+                      Write-Output "ERROR: Cannot install $($app.Software): $errorLogContent"
+                  }
+              }
           }
           # Join MMAD Domain
           if ((Get-WmiObject win32_computersystem).partofdomain -eq $false)  {
             $FetchedSecret = ConvertFrom-Json -InputObject (Get-SECSecretValue -SecretId ${smsmmad01}).SecretString
-            $Credentials = (New-Object PSCredential($FetchedSecret.username,(ConvertTo-SecureString $FetchedSecret.password -AsPlainText -Force)))
+            $DomainAdminUsername = $FetchedSecret.domain + "\" + $FetchedSecret.username 
+            $Credentials = (New-Object PSCredential($DomainAdminUsername,(ConvertTo-SecureString $FetchedSecret.password -AsPlainText -Force)))
             Rename-Computer -NewName ${AdminBoxName}
             Start-Sleep -Seconds 5
             Write-Output "LOG: Joining Active Directory Domain"
@@ -1495,77 +1625,83 @@ Resources:
             }
             until ($checkdomainjoinedstatus -eq 'True')
             Write-Output "LOG: Instance has been joined to AD domain!"
-          }
-          # Install dbeaver
-          $Publisher = "DBeaver Corp"
-          $Installed = $null -ne (Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.Publisher -eq $Publisher })
-          if (-not $installed) {
-            Write-Output "LOG: installing dbeaver"
-            C:\ProgramData\\chocolatey\choco install dbeaver -y
-          }
-          # Install Git
-          $Software = "Git"
-          $Installed = $null -ne (Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -eq $Software })
-          if (-not $installed) {
-            Write-Output "LOG: installing Git"
-            C:\ProgramData\\chocolatey\choco install git -y
-            $env:Path += ";C:\Program Files\Git\bin"
-          }
-          # Create Mission Pack
-          $FolderPath = "C:\MISSION_PACK"
-          if (-not (Test-Path $FolderPath\REPO\MISSION-CHECKLIST.txt)) {
-            Write-Output "LOG: Creating MISSION PACK"
-            New-Item -ItemType Directory -Path $FolderPath
-            icacls $FolderPath /grant "Everyone:(OI)(CI)F" /T
-            $env:GIT_REDIRECT_STDERR = '2>&1'
-            git clone ${GitRepo} $FolderPath\REPO
-            $FetchedSecret = ConvertFrom-Json -InputObject (Get-SECSecretValue -SecretId ${smsmmad01}).SecretString
-            (Get-Content $FolderPath\REPO\MISSION-CHECKLIST.txt) |
-                ForEach-Object {
-                    $_ -replace '<devboxusername>', ((Get-SECSecretValue -SecretId ${smsmmad01}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty username) `
-                      -replace '<devboxpassword>', ((Get-SECSecretValue -SecretId ${smsmmad01}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty password) `
-                      -replace '<devboxdomain>', ((Get-SECSecretValue -SecretId ${smsmmad01}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty domain) `
-                      -replace '<sqlserver>', '${rdsmssql01.Endpoint.Address}' `
-                      -replace '<sqlusername>', ((Get-SECSecretValue -SecretId ${smssqladmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty username) `
-                      -replace '<sqlpassword>', ((Get-SECSecretValue -SecretId ${smssqladmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty password) `
-                      -replace '<currentloadbalancerdns>', '${alb01.DNSName}' `
-                      -replace '<secretarn>', '${smsmmad01}' `
-                      -replace '<s3bucket>', '${s3bucket}' `
-                      -replace '<sourceserverIPaddress>', 'figurethisout' `
-                      -replace '<vpcid>', '${vpc01}' `
-                } | Set-Content $FolderPath\REPO\MISSION-CHECKLIST.txt
+            Start-Sleep -Seconds 30
           }
           # App2Container Prerequisites - Worker Machine
           # https://docs.aws.amazon.com/app2container/latest/UserGuide/start-containerize-prereq.html
           $FolderPath = "C:\MISSION_PACK"
           if (-not (Test-Path $FolderPath\APP2C\AWSApp2Container-installer-windows\install.ps1)) {
             Write-Output "LOG: Completing App2Container prerequisites - Worker Machine"
-            Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
-            Invoke-WebRequest -UseBasicParsing "https://app2container-release-us-east-1.s3.us-east-1.amazonaws.com/latest/windows/AWSApp2Container-installer-windows.zip" -OutFile $FolderPath\APP2C\AWSApp2Container-installer-windows.zip
+            # Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
+            New-Item -Path $FolderPath\APP2C -ItemType Directory -Force
+            (New-Object System.Net.WebClient).DownloadFile("https://app2container-release-us-east-1.s3.us-east-1.amazonaws.com/latest/windows/AWSApp2Container-installer-windows.zip", "$FolderPath\APP2C\AWSApp2Container-installer-windows.zip")
             # Extract App2Container for Windows
             Expand-Archive -Path $FolderPath\APP2C\AWSApp2Container-installer-windows.zip -DestinationPath $FolderPath\APP2C\AWSApp2Container-installer-windows -Force
           }
-          # Microservices Extractor Prerequisites
+          # Schema Conversion Tool Prerequisites
+          # https://docs.aws.amazon.com/SchemaConversionTool/latest/userguide/CHAP_Installing.html#CHAP_Installing.Procedure
           $FolderPath = "C:\MISSION_PACK"
-          if (-not (Test-Path $FolderPath\MicroservicesExtractor\ServiceExtract.exe)) {
-            Write-Output "LOG: Completing Microservices Extractor prerequisites"
-            New-Item -Path $FolderPath\MicroservicesExtractor -ItemType Directory -Force
-            Invoke-WebRequest -UseBasicParsing "https://s3.us-west-2.amazonaws.com/aws.serviceextract.download/latest/windows/ServiceExtract.exe" -OutFile $FolderPath\MicroservicesExtractor\ServiceExtract.exe
+          if (-not (Test-Path $FolderPath\SCT\DatabaseDrivers\postgresql-42.2.19.jar)) {
+            Write-Output "LOG: Completing SCT prerequisites"
+            New-Item -Path $FolderPath\SCT -ItemType Directory -Force
+            (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/publicsctdownload/Windows/aws-schema-conversion-tool-1.0.latest.zip", "$FolderPath\SCT\aws-schema-conversion-tool-1.0.latest.zip")
+            Expand-Archive -Path $FolderPath\SCT\aws-schema-conversion-tool-1.0.latest.zip -DestinationPath $FolderPath\SCT -Force
+            New-Item -Path C:\MISSION_PACK\SCT\DatabaseDrivers -ItemType Directory -Force
+            (New-Object System.Net.WebClient).DownloadFile("https://go.microsoft.com/fwlink/?linkid=2245438", "$FolderPath\SCT\DataBaseDrivers\sqljdbc_12.4.1.0_enu.zip")
+            Expand-Archive -Path $FolderPath\SCT\DatabaseDrivers\sqljdbc_12.4.1.0_enu.zip -DestinationPath $FolderPath\SCT\DatabaseDrivers -Force
+            (New-Object System.Net.WebClient).DownloadFile("https://jdbc.postgresql.org/download/postgresql-42.2.19.jar", "$FolderPath\SCT\DatabaseDrivers\postgresql-42.2.19.jar")
           }
-          # Install SQL Management Tools
-          $Software = "SQL Server Management Studio"
-          $Installed = $null -ne (Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -eq $Software })
-          if (-not $installed) {
-            Write-Output "LOG: installing SQL Management Tools"
-            C:\ProgramData\\chocolatey\choco install sql-server-management-studio -y
+          # Microservice Extractor Prerequisites
+          $FolderPath = "C:\MISSION_PACK"
+          if (-not (Test-Path $FolderPath\MicroserviceExtractor\ServiceExtract.exe)) {
+            Write-Output "LOG: Completing Microservice Extractor prerequisites"
+            New-Item -Path $FolderPath\MicroserviceExtractor -ItemType Directory -Force
+            (New-Object System.Net.WebClient).DownloadFile("https://s3.us-west-2.amazonaws.com/aws.serviceextract.download/latest/windows/ServiceExtract.exe", "$FolderPath\MicroserviceExtractor\ServiceExtract.exe")
           }
-          # Install Visual Studio Community Edition
-          $Software = "vs_communityx64msi"
-          $Installed = $null -ne (Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -eq $Software })
-          if (-not $installed) {
-            Write-Output "LOG: installing Visual Studio Community Edition"
-            C:\ProgramData\\chocolatey\choco install visualstudio2022community -y
-            C:\ProgramData\\chocolatey\choco install visualstudio2022-workload-netweb -y
+          # Create Mission Pack
+          $FolderPath = "C:\MISSION_PACK"
+          try{
+            if (-not (Test-Path c:\share\PackSignal.token)) {
+              Write-Output "LOG: Creating MISSION PACK"
+              icacls $FolderPath /grant "Everyone:(OI)(CI)F" /T
+              $env:GIT_REDIRECT_STDERR = '2>&1'
+              git clone ${GitRepo} $FolderPath\REPO
+              $FetchedSecret = ConvertFrom-Json -InputObject (Get-SECSecretValue -SecretId ${smsmmad01}).SecretString
+              (Get-Content $FolderPath\REPO\PART2\mission-checklist.txt) |
+                  ForEach-Object {
+                      $_ -replace '<devboxusername>', ((Get-SECSecretValue -SecretId ${smsmmad01}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty username) `
+                        -replace '<devboxpassword>', ((Get-SECSecretValue -SecretId ${smsmmad01}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty password) `
+                        -replace '<devboxdomain>', ((Get-SECSecretValue -SecretId ${smsmmad01}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty domain) `
+                        -replace '<sqlserver>', '${rdsmssql01.Endpoint.Address}' `
+                        -replace '<sqlusername>', ((Get-SECSecretValue -SecretId ${smssqladmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty username) `
+                        -replace '<sqlpassword>', ((Get-SECSecretValue -SecretId ${smssqladmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty password) `
+                        -replace '<currentloadbalancerdns>', '${alb01.DNSName}' `
+                        -replace '<secretarn>', '${smsmmad01}' `
+                        -replace '<s3bucket>', '${s3bucket}' `
+                        -replace '<sourceserverIPaddress>', 'figurethisout' `
+                        -replace '<vpcid>', '${vpc01}' `
+                        -replace '<awsaccesskeyid>', ((Get-SECSecretValue -SecretId ${smsawscli}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty AccessKeyId) `
+                        -replace '<awsaccesskeysecret>', ((Get-SECSecretValue -SecretId ${smsawscli}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty SecretAccessKey) `
+                        -replace '<awskmskeyarn>', '${kmskey.Arn}' `
+                        -replace '<region>', '${AWS::Region}' `
+                        -replace '<auroraserver>', '${rdsauroracluster.Endpoint.Address}' `
+                        -replace '<aurorausername>', ((Get-SECSecretValue -SecretId ${smsauroraadmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty username) `
+                        -replace '<aurorapassword>', ((Get-SECSecretValue -SecretId ${smsauroraadmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty password) `
+                  } | Set-Content $FolderPath\REPO\PART2\mission-checklist.txt
+              (Get-Content $FolderPath\REPO\PART2\anyo-platform-src\anyo-modernized\anyo-platform-core\appsettings.json) |
+                  ForEach-Object {
+                      $_ -replace '<AMAZONRDSSQLSERVER>', '${rdsmssql01.Endpoint.Address}' `
+                        -replace '<SQLUSERNAME>', ((Get-SECSecretValue -SecretId ${smssqladmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty username) `
+                        -replace '<SQLPASSWORD>', ((Get-SECSecretValue -SecretId ${smssqladmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty password) `
+                        -replace '<AMAZONAURORAPSQL>', '${rdsauroracluster.Endpoint.Address}' `
+                        -replace '<AURORAUSERNAME>', ((Get-SECSecretValue -SecretId ${smsauroraadmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty username) `
+                        -replace '<AURORAPASSWORD>', ((Get-SECSecretValue -SecretId ${smsauroraadmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty password) `
+                  } | Set-Content $FolderPath\REPO\PART2\anyo-platform-src\anyo-modernized\anyo-platform-core\appsettings.json
+              Copy-Item -Path $FolderPath\REPO\PART2\anyo-platform-src\anyo-modernized\anyo-platform-core\appsettings.json -Destination $FolderPath\REPO\PART2\anyo-platform-src\anyo-donation-service\anyo-platform-core\appsettings.json -Force -Confirm:$false
+              New-Item -Path 'c:\share\PackSignal.token' -ItemType File -Force
+            }
+          } catch {
+            Write-Output "ERROR: Failed to create MISSION PACK reboot server"
           }
           # Useful Locations
           Write-Output "Log locations"
@@ -1671,7 +1807,7 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref ltg01
 
-  ### Network Load Balancer for RDP over Internet (WARNING: Not recommended - but necessary for workshop attendees without AWS CLI installed)
+  ### Network Load Balancer for RDP over Internet (WARNING: Not recommended - but necessary for some workshop attendees)
   scgnlb01:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -1843,20 +1979,11 @@ Resources:
             if (-not (Test-Path C:\SSMAgent_latest.exe)) {
                 Write-Output "LOG: Installing/upgrading SSM Agent"
                 [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
-                $progressPreference = 'silentlyContinue'
-                Invoke-WebRequest `
-                    https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe `
-                    -OutFile C:\SSMAgent_latest.exe
+                (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
                 Start-Process `
                   -FilePath C:\SSMAgent_latest.exe `
-                  -ArgumentList "/S"
-            }
-            # Install/upgrade SSM Agent Session Manager Plugin
-            if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
-              Invoke-WebRequest `
-                  https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe `
-                  -OutFile C:\SessionManagerPluginSetup.exe 
-              Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
+                  -ArgumentList "/S" `
+                  -Wait
             }
             # Wait for domain join before continue
             do {
@@ -1866,22 +1993,21 @@ Resources:
             }
             until ($checkdomainjoinedstatus -eq 'True')
             Write-Output "LOG: Instance has been joined to AD domain!"
+            # Install/upgrade SSM Agent Session Manager Plugin
+            if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
+              (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe", "C:\SessionManagerPluginSetup.exe")
+              Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
+            }
             # Disable IE ESC
             $IEESCRegKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
             if ((Test-Path -Path $IEESCRegKey) -and ((Get-ItemPropertyValue -Path $IEESCRegKey -Name "IsInstalled") -ne 0)) {
                 Write-Output "LOG: Disabling Internet Explorer ESC"
                 Set-ItemProperty -Path $IEESCRegKey -Name "IsInstalled" -Value 0
               }
-            # Apply AWS Systems Manager Fleet Manager PowerShell Interface fix
-            if (-not (Test-Path "C:\Program Files\WindowsPowerShell\Modules\PSReadline\2.2.6")) {
-                  Write-Output "LOG: Applying AWS Systems Manager Fleet Manager PowerShell Interface fix"
-                  Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
-                  Save-Module -Name PowerShellGet -Path 'C:\Program Files\WindowsPowerShell\Modules' -Force -Confirm:$false
-                  Install-Module -Name PSReadLine -Scope AllUsers -Force -Confirm:$false
-              }
             # Install AWSCLIv2
-            if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2")) {
-              msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi /quiet
+            if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2\aws.exe")) {
+              Write-Output "LOG: Intalling AWSCLIv2"
+              Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "https://awscli.amazonaws.com/AWSCLIV2.msi", "/quiet" -Wait
               }
             # Install IIS Web Services
             if ((Get-WindowsFeature Web-Mgmt-Console).installed -ne 'True') {
@@ -1890,14 +2016,14 @@ Resources:
               }
             # Copy Webserver files
             Write-Output "LOG: Copying web server files"
-            C:\PROGRA~1\Amazon\AWSCLIV2\aws s3 sync s3://${S3SourceBucket}/anyo-platform-release/old C:\inetpub\anyo
+            C:\PROGRA~1\Amazon\AWSCLIV2\aws s3 sync s3://${S3SourceBucket }/anyo-platform-release/anyo-legacy C:\inetpub\anyo
             (Get-Content C:\inetpub\anyo\Web.config) |
                 ForEach-Object {
                     $_ -replace '<AMAZONRDSSQLSERVER>', '${rdsmssql01.Endpoint.Address}' `
                       -replace '<SQLUSERNAME>', ((Get-SECSecretValue -SecretId ${smssqladmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty username) `
                       -replace '<SQLPASSWORD>', ((Get-SECSecretValue -SecretId ${smssqladmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty password) `
                 } | Set-Content C:\inetpub\anyo\Web.config
-            # Configure Web Server local settings
+            # Configure Web Server local settings TODO: Sort if on subsequent runs
             if (Test-Path C:\inetpub\anyo) {
               Write-Output "LOG: Configuring webserver local settings"
               # Set permissions and create website
@@ -1962,7 +2088,6 @@ Resources:
     DependsOn:
       - mad01
       - rdsmssql01
-      - ec2srv01
   aspwebserver:
     Type: AWS::AutoScaling::ScalingPolicy
     Properties:
@@ -1974,21 +2099,22 @@ Resources:
           PredefinedMetricType: ASGAverageCPUUtilization
         TargetValue: 90.0
 
-  ### Amazon Aurora (Target)
-  rdsaurorapgsql01:
+  ### Amazon Aurora
+  rdsauroracluster:
     Type: AWS::RDS::DBCluster
     Properties:
       AutoMinorVersionUpgrade: true
       BackupRetentionPeriod: 1
-      DatabaseName: !Sub ${PrefixCode}-aurora-postgresql-01
+      DatabaseName: !Sub ${AuroraDbName}
       DBSubnetGroupName: !Ref sbgrdsmssql01
       # Consider setting DeletionProtection to true for production environments
       DeletionProtection: false
       Engine: aurora-postgresql
       EngineVersion: "15.3"
+      EngineMode: provisioned
       KmsKeyId: !GetAtt kmskey.Arn
-      MasterUsername: pgsqlsa
-      ManageMasterUserPassword : true
+      MasterUsername: !Sub '{{resolve:secretsmanager:${smsauroraadmin}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${smsauroraadmin}:SecretString:password}}'
       ServerlessV2ScalingConfiguration:
         MaxCapacity: 8.0
         MinCapacity: 1.0
@@ -2012,37 +2138,190 @@ Resources:
           Value: !Sub ${PrefixCode}-resources
     # Consider changing or deleting the UpdateReplacePolicy for production environments
     UpdateReplacePolicy: Delete
-    Condition: DeployAurora
+  rdsaurorainstance:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      Engine: aurora-postgresql
+      DBInstanceClass: db.serverless
+      DBClusterIdentifier: !Ref rdsauroracluster
 
-  ### Juans Parameters
-  #TODO: Parameterise Names
-  SMParameterVarRawPath:
-    Type: AWS::SSM::Parameter
+  ### IAM User and Access Key for Microservice Extractor
+  iauawscli:
+    Type: AWS::IAM::User
     Properties:
-      Name: BucketName
-      Type: String
-      Value: wtfgoeshere
-      Description: Application code uses this parameter for Amazon S3 upload
+      ManagedPolicyArns:
+        # Consider using roles and groups to limit permissions assigned to this user account for production environments
+        - arn:aws:iam::aws:policy/AdministratorAccess
+      UserName: workshopawscli
       Tags:
-        Name: BucketName
-        provisioner: CFN
-        workshop: !Sub ${WorkShopTag}
-        resourcetype: parameter
-        customer: !Sub ${DepartmentTag}
-        environment: !Sub ${EnvironmentTag}
-        codeblock: !Sub ${PrefixCode}-resources
-  SMParameterVarRawPath:
-    Type: AWS::SSM::Parameter
+        - Key: Name
+          Value: !Sub ${PrefixCode}-iau-awscli
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  iakworkshop:
+    Type: AWS::IAM::AccessKey
+    Properties: 
+      Serial: 1
+      Status: Active
+      UserName: !Sub ${iauawscli}
+  smsawscli:
+    Type: AWS::SecretsManager::Secret
     Properties:
-      Name: ConnectionString
-      Type: String
-      Value: wtfgoeshere
-      Description: Application code uses this parameter for Amazon S3 upload
+      Name: !Sub ${PrefixCode}-secret-awscli
+      Description: Access key provided to workshop participants for utilizing AWS CLI
+      SecretString: !Sub '{"AccessKeyId":"${iakworkshop}","SecretAccessKey":"${iakworkshop.SecretAccessKey}"}'
       Tags:
-        Name: ConnectionString
-        provisioner: CFN
-        workshop: !Sub ${WorkShopTag}
-        resourcetype: parameter
-        customer: !Sub ${DepartmentTag}
-        environment: !Sub ${EnvironmentTag}
-        codeblock: !Sub ${PrefixCode}-resources
+        - Key: Name
+          Value: !Sub ${PrefixCode}-secret-awscli
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+
+  ### DMS replication instance
+  iardmsvpc:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - dms.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      RoleName: dms-vpc-role
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonDMSVPCManagementRole
+  dmssubnetgroup: 
+    Properties: 
+      ReplicationSubnetGroupDescription: Allows DMS replication instance to communicate with target and source databases
+      ReplicationSubnetGroupIdentifier: !Sub ${PrefixCode}-dms-subnetgroup
+      SubnetIds: 
+        - !Ref sbnpv03
+        - !Ref sbnpv04
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-dms-subnetgroup
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: database
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+    Type: "AWS::DMS::ReplicationSubnetGroup"
+    DependsOn:
+      - iardmsvpc
+  dmsreplicationinstance:
+    Type: AWS::DMS::ReplicationInstance
+    Properties: 
+      AllocatedStorage: 30
+      # Consider version upgrades to 'true' for production environments
+      AllowMajorVersionUpgrade: false
+      AutoMinorVersionUpgrade: false
+      AvailabilityZone: !Sub ${AvailabilityZone1}
+      KmsKeyId: !GetAtt kmskey.Arn
+      MultiAZ: false
+      PubliclyAccessible: false
+      ReplicationInstanceClass: dms.c4.large
+      ReplicationInstanceIdentifier: !Sub ${PrefixCode}-dms-repinstance
+      ReplicationSubnetGroupIdentifier: !Sub ${dmssubnetgroup}
+      VpcSecurityGroupIds: 
+         - !Ref scgdat01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-dms-repinstance
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: database
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+    DependsOn:
+      - iardmsvpc
+  dmsendpointsql: 
+    Type: "AWS::DMS::Endpoint"
+    Properties: 
+      DatabaseName: !Sub ${SQLDbName}
+      EndpointIdentifier: !Ref rdsmssql01
+      EndpointType: source
+      EngineName: sqlserver
+      KmsKeyId: !GetAtt kmskey.Arn
+      Username: !Sub '{{resolve:secretsmanager:${smssqladmin}:SecretString:username}}'
+      Password: !Sub '{{resolve:secretsmanager:${smssqladmin}:SecretString:password}}'
+      Port: 1433
+      ServerName: !GetAtt rdsmssql01.Endpoint.Address
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-dms-repinstance
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: database
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+  dmsendpointaurora: 
+    Type: "AWS::DMS::Endpoint"
+    Properties: 
+      DatabaseName: !Sub ${AuroraDbName}
+      EndpointIdentifier: !Ref rdsauroracluster
+      EndpointType: target
+      EngineName: aurora-postgresql
+      KmsKeyId: !GetAtt kmskey.Arn
+      Username: !Sub '{{resolve:secretsmanager:${smsauroraadmin}:SecretString:username}}'
+      Password: !Sub '{{resolve:secretsmanager:${smsauroraadmin}:SecretString:password}}'
+      Port: 3306
+      ServerName: !GetAtt rdsaurorainstance.Endpoint.Address
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-dms-repinstance
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: database
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources

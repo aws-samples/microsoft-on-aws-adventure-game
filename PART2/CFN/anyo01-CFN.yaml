@@ -20,8 +20,6 @@ Metadata:
           default: Network Settings
         Parameters:
           - VpcCidr
-          - AvailabilityZone1
-          - AvailabilityZone2
       - Label:
           default: Operating System Settings
         Parameters:
@@ -64,14 +62,6 @@ Parameters:
     Type: String
     Default: "10.180"
     Description: Specify the first 2 octets of VPC and subnet CIDR range
-  AvailabilityZone1:
-    Type: String
-    Default: us-west-2a
-    Description: Set the primary Availability Zone to the region where you are deploying this template.
-  AvailabilityZone2:
-    Type: String
-    Default: us-west-2b
-    Description: Set the secondary Availability Zone to the region where you are deploying this template.
   LatestAmiIdWin:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base
@@ -409,12 +399,12 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref vpc01
-      AvailabilityZone: !Sub ${AvailabilityZone1}
+      AvailabilityZone: !Select [0, !GetAZs ""]
       CidrBlock: !Sub ${VpcCidr}.1.0/24
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-subnet-public1-${AvailabilityZone1}
+          Value: !Sub ${PrefixCode}-subnet-public1-AvailabilityZone1
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -431,12 +421,12 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref vpc01
-      AvailabilityZone: !Sub ${AvailabilityZone2}
+      AvailabilityZone: !Select [1, !GetAZs ""]
       CidrBlock: !Sub ${VpcCidr}.2.0/24
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-subnet-public2-${AvailabilityZone2}
+          Value: !Sub ${PrefixCode}-subnet-public2-AvailabilityZone2
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -453,12 +443,12 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref vpc01
-      AvailabilityZone: !Sub ${AvailabilityZone1}
+      AvailabilityZone: !Select [0, !GetAZs ""]
       CidrBlock: !Sub ${VpcCidr}.3.0/24
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-subnet-private1-${AvailabilityZone1}
+          Value: !Sub ${PrefixCode}-subnet-private1-AvailabilityZone1
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -475,12 +465,12 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref vpc01
-      AvailabilityZone: !Sub ${AvailabilityZone2}
+      AvailabilityZone: !Select [1, !GetAZs ""]
       CidrBlock: !Sub ${VpcCidr}.4.0/24
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-subnet-private2-${AvailabilityZone2}
+          Value: !Sub ${PrefixCode}-subnet-private2-AvailabilityZone2
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -497,12 +487,12 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref vpc01
-      AvailabilityZone: !Sub ${AvailabilityZone1}
+      AvailabilityZone: !Select [0, !GetAZs ""]
       CidrBlock: !Sub ${VpcCidr}.5.0/24
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-subnet-private3-${AvailabilityZone1}
+          Value: !Sub ${PrefixCode}-subnet-private3-AvailabilityZone1
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -519,12 +509,12 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref vpc01
-      AvailabilityZone: !Sub ${AvailabilityZone2}
+      AvailabilityZone: !Select [1, !GetAZs ""]
       CidrBlock: !Sub ${VpcCidr}.6.0/24
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-subnet-private4-${AvailabilityZone2}
+          Value: !Sub ${PrefixCode}-subnet-private4-AvailabilityZone2
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -569,7 +559,7 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-eip-${AvailabilityZone1}
+          Value: !Sub ${PrefixCode}-eip-AvailabilityZone1
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -587,7 +577,7 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-eip-${AvailabilityZone2}
+          Value: !Sub ${PrefixCode}-eip-AvailabilityZone2
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -609,7 +599,7 @@ Resources:
       SubnetId: !Ref sbnpb01
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-nat-public1-${AvailabilityZone1}
+          Value: !Sub ${PrefixCode}-nat-public1-AvailabilityZone1
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -630,7 +620,7 @@ Resources:
       SubnetId: !Ref sbnpb02
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-nat-public2-${AvailabilityZone2}
+          Value: !Sub ${PrefixCode}-nat-public2-AvailabilityZone2
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -687,7 +677,7 @@ Resources:
       VpcId: !Ref vpc01
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-rtb-private1--${AvailabilityZone1}
+          Value: !Sub ${PrefixCode}-rtb-private1-AvailabilityZone1
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -717,7 +707,7 @@ Resources:
       VpcId: !Ref vpc01
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-rtb-private2--${AvailabilityZone2}
+          Value: !Sub ${PrefixCode}-rtb-private2-AvailabilityZone2
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -747,7 +737,7 @@ Resources:
       VpcId: !Ref vpc01
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-rtb-private3--${AvailabilityZone1}
+          Value: !Sub ${PrefixCode}-rtb-private3-AvailabilityZone1
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -777,7 +767,7 @@ Resources:
       VpcId: !Ref vpc01
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-rtb-private3--${AvailabilityZone2}
+          Value: !Sub ${PrefixCode}-rtb-private3-AvailabilityZone2
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -2245,7 +2235,7 @@ Resources:
       # Consider version upgrades to 'true' for production environments
       AllowMajorVersionUpgrade: false
       AutoMinorVersionUpgrade: false
-      AvailabilityZone: !Sub ${AvailabilityZone1}
+      AvailabilityZone: !Select [0, !GetAZs ""]
       KmsKeyId: !GetAtt kmskey.Arn
       MultiAZ: false
       PubliclyAccessible: false

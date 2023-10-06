@@ -17,8 +17,6 @@ Metadata:
           default: Network Settings
         Parameters:
           - VpcCidr
-          - AvailabilityZone1
-          - AvailabilityZone2
       - Label:
           default: Operating System Settings
         Parameters:
@@ -49,14 +47,6 @@ Parameters:
     Type: String
     Default: "10.180"
     Description: Specify the first 2 octets of VPC and subnet CIDR range
-  AvailabilityZone1:
-    Type: String
-    Default: us-west-2a
-    Description: Set the primary Availability Zone to the region where you are deploying this template.
-  AvailabilityZone2:
-    Type: String
-    Default: us-west-2b
-    Description: Set the secondary Availability Zone to the region where you are deploying this template.
   LatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base
@@ -393,12 +383,12 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref vpc01
-      AvailabilityZone: !Sub ${AvailabilityZone1}
+      AvailabilityZone: !Select [0, !GetAZs ""]
       CidrBlock: !Sub ${VpcCidr}.1.0/24
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-subnet-public1-${AvailabilityZone1}
+          Value: !Sub ${PrefixCode}-subnet-public1-AvailabilityZone1
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -415,12 +405,12 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref vpc01
-      AvailabilityZone: !Sub ${AvailabilityZone2}
+      AvailabilityZone: !Select [1, !GetAZs ""]
       CidrBlock: !Sub ${VpcCidr}.2.0/24
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-subnet-public2-${AvailabilityZone2}
+          Value: !Sub ${PrefixCode}-subnet-public2-AvailabilityZone2
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -437,12 +427,12 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref vpc01
-      AvailabilityZone: !Sub ${AvailabilityZone1}
+      AvailabilityZone: !Select [0, !GetAZs ""]
       CidrBlock: !Sub ${VpcCidr}.3.0/24
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-subnet-private1-${AvailabilityZone1}
+          Value: !Sub ${PrefixCode}-subnet-private1-AvailabilityZone1
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -459,12 +449,12 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref vpc01
-      AvailabilityZone: !Sub ${AvailabilityZone2}
+      AvailabilityZone: !Select [1, !GetAZs ""]
       CidrBlock: !Sub ${VpcCidr}.4.0/24
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-subnet-private2-${AvailabilityZone2}
+          Value: !Sub ${PrefixCode}-subnet-private2-AvailabilityZone2
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -481,12 +471,12 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref vpc01
-      AvailabilityZone: !Sub ${AvailabilityZone1}
+      AvailabilityZone: !Select [0, !GetAZs ""]
       CidrBlock: !Sub ${VpcCidr}.5.0/24
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-subnet-private3-${AvailabilityZone1}
+          Value: !Sub ${PrefixCode}-subnet-private3-AvailabilityZone1
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -503,12 +493,12 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref vpc01
-      AvailabilityZone: !Sub ${AvailabilityZone2}
+      AvailabilityZone: !Select [1, !GetAZs ""]
       CidrBlock: !Sub ${VpcCidr}.6.0/24
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-subnet-private4-${AvailabilityZone2}
+          Value: !Sub ${PrefixCode}-subnet-private4-AvailabilityZone2
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -553,7 +543,7 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-eip-${AvailabilityZone1}
+          Value: !Sub ${PrefixCode}-eip-AvailabilityZone1
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -571,7 +561,7 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-eip-${AvailabilityZone2}
+          Value: !Sub ${PrefixCode}-eip-AvailabilityZone2
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -593,7 +583,7 @@ Resources:
       SubnetId: !Ref sbnpb01
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-nat-public1-${AvailabilityZone1}
+          Value: !Sub ${PrefixCode}-nat-public1-AvailabilityZone1
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -614,7 +604,7 @@ Resources:
       SubnetId: !Ref sbnpb02
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-nat-public2-${AvailabilityZone2}
+          Value: !Sub ${PrefixCode}-nat-public2-AvailabilityZone2
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -671,7 +661,7 @@ Resources:
       VpcId: !Ref vpc01
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-rtb-private1--${AvailabilityZone1}
+          Value: !Sub ${PrefixCode}-rtb-private1-AvailabilityZone1
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -701,7 +691,7 @@ Resources:
       VpcId: !Ref vpc01
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-rtb-private2--${AvailabilityZone2}
+          Value: !Sub ${PrefixCode}-rtb-private2-AvailabilityZone2
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -731,7 +721,7 @@ Resources:
       VpcId: !Ref vpc01
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-rtb-private3--${AvailabilityZone1}
+          Value: !Sub ${PrefixCode}-rtb-private3-AvailabilityZone1
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -761,7 +751,7 @@ Resources:
       VpcId: !Ref vpc01
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-rtb-private3--${AvailabilityZone2}
+          Value: !Sub ${PrefixCode}-rtb-private3-AvailabilityZone2
         - Key: provisioner
           Value: CFN
         - Key: workshop
@@ -1391,18 +1381,15 @@ Resources:
         Write-Output "LOG: START OF EXECUTION"
         # Install/upgrade SSM Agent
         if (-not (Test-Path C:\SSMAgent_latest.exe)) {
-            Write-Output "LOG: Installing/upgrading SSM Agent"
-            Invoke-WebRequest `
-                https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe `
-                -OutFile C:\SSMAgent_latest.exe
-            Start-Process C:\SSMAgent_latest.exe -ArgumentList @("/q", "/log", "install.log") -Wait
+          Write-Output "LOG: Installing/upgrading SSM Agent"
+          [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
+          (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
+          Start-Process -FilePath "C:\SSMAgent_latest.exe" -ArgumentList "/S" -Wait
         }
         # Install/upgrade SSM Agent Session Manager Plugin
         if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
-            Invoke-WebRequest `
-              https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe `
-              -OutFile C:\SessionManagerPluginSetup.exe 
-            Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
+          (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe", "C:\SessionManagerPluginSetup.exe")
+          Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
         }
         # Disable IE ESC
         $IEESCRegKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
@@ -1410,18 +1397,11 @@ Resources:
             Write-Output "LOG: Disabling Internet Explorer ESC"
             Set-ItemProperty -Path $IEESCRegKey -Name "IsInstalled" -Value 0
           }
-        # Apply AWS Systems Manager Fleet Manager Powershell Interface fix
-        if (-not (Test-Path "C:\Program Files\WindowsPowerShell\Modules\PSReadline\2.2.6")) {
-              Write-Output "LOG: Applying AWS Systems Manager Fleet Manager Powershell Interface fix"
-              Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
-              Save-Module -Name PowerShellGet -Path 'C:\Program Files\WindowsPowerShell\Modules' -Force -Confirm:$false
-              Install-Module -Name PSReadLine -Scope AllUsers -Force -Confirm:$false
-          }
         # Install AWSCLIv2
-        if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2")) {
+        if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2\aws.exe")) {
           Write-Output "LOG: Intalling AWSCLIv2"
-          msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi /quiet
-          }  
+          Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "https://awscli.amazonaws.com/AWSCLIV2.msi", "/quiet" -Wait
+          }
         # Install Amazon WorkSpaces Client
         if (-not (Test-Path "C:\Program Files\Amazon Web Services, Inc\Amazon WorkSpaces")) {
           Write-Output "LOG: Installing Amazon WorkSpaces Client"
@@ -1434,8 +1414,8 @@ Resources:
         }
         # Install Chocolatey
         if (-not (Test-Path C:\ProgramData\\chocolatey)) {
-            Write-Output "LOG: installing Chocolatey"
-            Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          Write-Output "LOG: installing Chocolatey"
+          Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
         }
         # Install SQL Management Tools
         $Software = "SQL Server Management Studio"
@@ -1600,18 +1580,15 @@ Resources:
           Write-Output "LOG: START OF EXECUTION"
           # Install/upgrade SSM Agent
           if (-not (Test-Path C:\SSMAgent_latest.exe)) {
-              Write-Output "LOG: Installing/upgrading SSM Agent"
-              Invoke-WebRequest `
-                  https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe `
-                  -OutFile C:\SSMAgent_latest.exe
-              Start-Process C:\SSMAgent_latest.exe -ArgumentList @("/q", "/log", "install.log") -Wait
+            Write-Output "LOG: Installing/upgrading SSM Agent"
+            [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
+            (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
+            Start-Process -FilePath "C:\SSMAgent_latest.exe" -ArgumentList "/S" -Wait
           }
           # Install/upgrade SSM Agent Session Manager Plugin
           if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
-              Invoke-WebRequest `
-                https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe `
-                -OutFile C:\SessionManagerPluginSetup.exe 
-              Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
+            (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe", "C:\SessionManagerPluginSetup.exe")
+            Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
           }
           # Disable IE ESC
           $IEESCRegKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
@@ -1619,18 +1596,11 @@ Resources:
               Write-Output "LOG: Disabling Internet Explorer ESC"
               Set-ItemProperty -Path $IEESCRegKey -Name "IsInstalled" -Value 0
             }
-          # Apply AWS Systems Manager Fleet Manager Powershell Interface fix
-          if (-not (Test-Path "C:\Program Files\WindowsPowerShell\Modules\PSReadline\2.2.6")) {
-                Write-Output "LOG: Applying AWS Systems Manager Fleet Manager Powershell Interface fix"
-                Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
-                Save-Module -Name PowerShellGet -Path 'C:\Program Files\WindowsPowerShell\Modules' -Force -Confirm:$false
-                Install-Module -Name PSReadLine -Scope AllUsers -Force -Confirm:$false
-            }
           # Install AWSCLIv2
-          if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2")) {
-            msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi /quiet
-            }  
-          Write-Output "LOG: Fixing Copy pasta for Fleet Manager"
+          if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2\aws.exe")) {
+            Write-Output "LOG: Intalling AWSCLIv2"
+            Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "https://awscli.amazonaws.com/AWSCLIV2.msi", "/quiet" -Wait
+            }
           # Install Admin tools
           if ((Get-WindowsFeature RSAT).installed -ne 'True') {
               Write-Output "LOG: installing admin tools"
@@ -1645,6 +1615,10 @@ Resources:
             Write-Output "LOG: Joining Active Directory Domain"
             Add-Computer -DomainName ${WindowsDomain} -Credential $Credentials -force -Options JoinWithNewName,AccountCreate -restart
           }
+          # Useful Locations
+          Write-Output "Log locations"
+          Write-Output "C:\Windows\System32\config\systemprofile\AppData\Local\Temp"
+          Write-Output "C:\ProgramData\Amazon\EC2Launch\log\"
           # Stop logging
           Stop-Transcript
           </powershell>
@@ -1775,18 +1749,10 @@ Resources:
         Write-Output "LOG: START OF EXECUTION"
         # Install/upgrade SSM Agent
         if (-not (Test-Path C:\SSMAgent_latest.exe)) {
-          Write-Output "LOG: Installing SSM Agent"
-          Invoke-WebRequest `
-              https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe `
-              -OutFile C:\SSMAgent_latest.exe
-          Start-Process C:\SSMAgent_latest.exe -ArgumentList @("/q", "/log", "install.log") -Wait
-        }
-        # Install/upgrade SSM Agent Session Manager Plugin
-        if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
-          Invoke-WebRequest `
-              https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe `
-              -OutFile C:\SessionManagerPluginSetup.exe 
-          Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
+            Write-Output "LOG: Installing/upgrading SSM Agent"
+            [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
+            (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
+            Start-Process -FilePath "C:\SSMAgent_latest.exe" -ArgumentList "/S" -Wait
         }
         # Wait for domain join before continue
         do {
@@ -1796,22 +1762,21 @@ Resources:
         }
         until ($checkdomainjoinedstatus -eq 'True')
         Write-Output "LOG: Instance has been joined to AD domain!"
+        # Install/upgrade SSM Agent Session Manager Plugin
+        if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
+          (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe", "C:\SessionManagerPluginSetup.exe")
+          Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
+        }
         # Disable IE ESC
         $IEESCRegKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
         if ((Test-Path -Path $IEESCRegKey) -and ((Get-ItemPropertyValue -Path $IEESCRegKey -Name "IsInstalled") -ne 0)) {
             Write-Output "LOG: Disabling Internet Explorer ESC"
             Set-ItemProperty -Path $IEESCRegKey -Name "IsInstalled" -Value 0
           }
-        # Apply AWS Systems Manager Fleet Manager PowerShell Interface fix
-        if (-not (Test-Path "C:\Program Files\WindowsPowerShell\Modules\PSReadline\2.2.6")) {
-              Write-Output "LOG: Applying AWS Systems Manager Fleet Manager PowerShell Interface fix"
-              Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
-              Save-Module -Name PowerShellGet -Path 'C:\Program Files\WindowsPowerShell\Modules' -Force -Confirm:$false
-              Install-Module -Name PSReadLine -Scope AllUsers -Force -Confirm:$false
-          }
         # Install AWSCLIv2
-        if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2")) {
-          msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi /quiet
+        if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2\aws.exe")) {
+          Write-Output "LOG: Intalling AWSCLIv2"
+          Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "https://awscli.amazonaws.com/AWSCLIV2.msi", "/quiet" -Wait
           }
         # Install IIS Web Services
         if ((Get-WindowsFeature Web-Mgmt-Console).installed -ne 'True') {
@@ -1986,8 +1951,6 @@ Resources:
       DocumentFormat: YAML
       DocumentType: Command
       Name: 'mag_map_fsx'
-    DependsOn: 
-    - fsxmmadsingaz
 
   ### Association for 'mag_map_fsx' SSM document
   Association:

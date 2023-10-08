@@ -1381,10 +1381,13 @@ Resources:
         Write-Output "LOG: START OF EXECUTION"
         # Install/upgrade SSM Agent
         if (-not (Test-Path C:\SSMAgent_latest.exe)) {
-          Write-Output "LOG: Installing/upgrading SSM Agent"
-          [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
-          (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
-          Start-Process -FilePath "C:\SSMAgent_latest.exe" -ArgumentList "/S" -Wait
+            Write-Output "LOG: Installing/upgrading SSM Agent"
+            [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
+            (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
+            Start-Process `
+              -FilePath C:\SSMAgent_latest.exe `
+              -ArgumentList "/S" `
+              -Wait
         }
         # Install/upgrade SSM Agent Session Manager Plugin
         if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
@@ -1580,10 +1583,13 @@ Resources:
           Write-Output "LOG: START OF EXECUTION"
           # Install/upgrade SSM Agent
           if (-not (Test-Path C:\SSMAgent_latest.exe)) {
-            Write-Output "LOG: Installing/upgrading SSM Agent"
-            [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
-            (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
-            Start-Process -FilePath "C:\SSMAgent_latest.exe" -ArgumentList "/S" -Wait
+              Write-Output "LOG: Installing/upgrading SSM Agent"
+              [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
+              (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
+              Start-Process `
+                -FilePath C:\SSMAgent_latest.exe `
+                -ArgumentList "/S" `
+                -Wait
           }
           # Install/upgrade SSM Agent Session Manager Plugin
           if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
@@ -1752,7 +1758,10 @@ Resources:
             Write-Output "LOG: Installing/upgrading SSM Agent"
             [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
             (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
-            Start-Process -FilePath "C:\SSMAgent_latest.exe" -ArgumentList "/S" -Wait
+            Start-Process `
+              -FilePath C:\SSMAgent_latest.exe `
+              -ArgumentList "/S" `
+              -Wait
         }
         # Wait for domain join before continue
         do {

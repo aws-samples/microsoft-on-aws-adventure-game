@@ -30,6 +30,7 @@ VPC ID:				<vpcid>
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 MISSION 3
 ---------
+
 SQL Server:			<sqlserver>
 SQL Server port			1433
 SQL authentication username:	<sqlusername>
@@ -44,6 +45,7 @@ Aurora authentication password:	<aurorapassword>
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 MISSION 4
 ---------
+
 Region:				<Region>
 AWS access key ID:		<awsaccesskeyid>
 AWS secret access key:		<awsaccesskeysecret>
@@ -54,6 +56,8 @@ Output location:		**FILL ME IN**
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 MISSION 5
 ---------
+
+S3 bucket name:			<s3bucket>
 
 
 

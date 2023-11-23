@@ -126,6 +126,10 @@ New-Item -Path C:\MISSION_PACK\SCT\DatabaseDrivers -ItemType Directory -Force
 Expand-Archive -Path $FolderPath\SCT\DatabaseDrivers\sqljdbc_12.4.1.0_enu.zip -DestinationPath $FolderPath\SCT\DatabaseDrivers -Force
 (New-Object System.Net.WebClient).DownloadFile("https://jdbc.postgresql.org/download/postgresql-42.2.19.jar", "$FolderPath\SCT\DatabaseDrivers\postgresql-42.2.19.jar")
 
+[13] AWS CLI install from Session  Manager
+Start-Process -FilePath “msiexec.exe” -ArgumentList “/i”, “https://awscli.amazonaws.com/AWSCLIV2.msi”, “/quiet” -Wait
+shutdown /r /t 01
+
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 LOG LOCATIONS
 -------------

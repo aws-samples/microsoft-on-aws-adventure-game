@@ -86,7 +86,6 @@ C:\ProgramData\\chocolatey\choco install dbeaver -y
 
 [05] Install Git
 C:\ProgramData\\chocolatey\choco install git -y
-$env:Path += ";C:\Program Files\Git\bin"
 
 [06] Install SQL Management Tools
 C:\ProgramData\\chocolatey\choco install sql-server-management-studio -y
@@ -100,19 +99,18 @@ C:\ProgramData\\chocolatey\choco install googlechrome -y
 
 [09] Download and Extract App2Container
 $FolderPath = "C:\MISSION_PACK"
-Invoke-WebRequest -UseBasicParsing "https://app2container-release-us-east-1.s3.us-east-1.amazonaws.com/latest/windows/AWSApp2Container-installer-windows.zip" -OutFile $FolderPath\APP2C\AWSApp2Container-installer-windows.zip
+New-Item -Path $FolderPath\APP2C -ItemType Directory -Force
+(New-Object System.Net.WebClient).DownloadFile("https://app2container-release-us-east-1.s3.us-east-1.amazonaws.com/latest/windows/AWSApp2Container-installer-windows.zip", "$FolderPath\APP2C\AWSApp2Container-installer-windows.zip")
 Expand-Archive -Path $FolderPath\APP2C\AWSApp2Container-installer-windows.zip -DestinationPath $FolderPath\APP2C\AWSApp2Container-installer-windows -Force
 
 [10] Download Microservices Extractor
 $FolderPath = "C:\MISSION_PACK"
-Invoke-WebRequest -UseBasicParsing "https://s3.us-west-2.amazonaws.com/aws.serviceextract.download/latest/windows/ServiceExtract.exe" -OutFile $FolderPath\MicroservicesExtractor
+New-Item -Path $FolderPath\MicroservicesExtractor -ItemType Directory -Force
+(New-Object System.Net.WebClient).DownloadFile("https://s3.us-west-2.amazonaws.com/aws.serviceextract.download/latest/windows/ServiceExtract.exe", "$FolderPath\MicroservicesExtractor\ServiceExtract.exe")
 
 [11] Old Web Server files (run on .NET framework web server)
 Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
 C:\ProgramData\\chocolatey\choco install git -y
-$env:Path += ";C:\Program Files\Git\bin"
-C:\ProgramData\\chocolatey\choco install git -y
-$env:Path += ";C:\Program Files\Git\bin"
 git clone https://github.com/aws-samples/microsoft-on-aws-adventure-game.git C:\inetpub\anyo
 # Move files to correct location
 
@@ -129,6 +127,15 @@ Expand-Archive -Path $FolderPath\SCT\DatabaseDrivers\sqljdbc_12.4.1.0_enu.zip -D
 [13] AWS CLI install from Session  Manager
 Start-Process -FilePath “msiexec.exe” -ArgumentList “/i”, “https://awscli.amazonaws.com/AWSCLIV2.msi”, “/quiet” -Wait
 shutdown /r /t 01
+
+[14] List SDKs
+dotnet --list-sdks
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+LOG LOCATIONS
+-------------
+C:\Windows\System32\config\systemprofile\AppData\Local\Temp
+C:\ProgramData\Amazon\EC2Launch\log\
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------
 LOG LOCATIONS

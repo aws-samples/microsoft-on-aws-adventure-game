@@ -9,6 +9,7 @@ Metadata:
           default: Deployment Type
         Parameters:
           - DeploymentMode
+          - DeployNLB
       - Label:
           default: Web Server file location
         Parameters:
@@ -40,6 +41,13 @@ Parameters:
     AllowedValues:
       - "workshop"
       - "completed"
+  DeployNLB:
+    Type: String
+    Description: Select "true" if you plan to connect through RDP over the public Internet (not recommended)
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
   S3SourceBucket:
     Type: String
     Description: Specify the S3 Source bucket you manually created which contain the web server files.
@@ -85,6 +93,7 @@ Parameters:
     Description: Enter AWS Workshop abbreviated tag value
 Conditions:
   Deployall: !Equals [!Ref DeploymentMode, "completed"]
+  DeployNLB: !Equals [!Ref DeployNLB, "true"]
 Resources:
 
 ### AWS Key Management Service (Scaffold)
@@ -858,6 +867,15 @@ Resources:
       FromPort: 3389
       ToPort: 3389
       SourceSecurityGroupId: !Ref scgapp01
+  scgapp01SMB:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow SMB traffic from app tier
+      GroupId: !GetAtt scgapp01.GroupId
+      IpProtocol: tcp
+      FromPort: 445
+      ToPort: 445
+      SourceSecurityGroupId: !Ref scgapp01
   scgdat01:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -1071,7 +1089,7 @@ Resources:
       Description: RideAlong Microsoft Active Directory SQL admin account and RideAlong RDS for SQL server password
       KmsKeyId: !GetAtt kmskey.Arn
       GenerateSecretString:
-        SecretStringTemplate: !Sub '{"username": "sqladmin","domain": "${WindowsDomain}"}'
+        SecretStringTemplate: !Sub '{"username": "sqladmin","authentication": "SQL Server Authentication"}'
         GenerateStringKey: password
         PasswordLength: 12
         ExcludeCharacters: '"@/\&<>;,[]{}()?*=!''`'
@@ -1145,7 +1163,7 @@ Resources:
       EnableCloudwatchLogsExports:
         - "error"
       EnablePerformanceInsights: true
-      Engine: sqlserver-ee
+      Engine: sqlserver-se
       EngineVersion: 15.00.4236.7.v1
       LicenseModel: license-included
       ManageMasterUserPassword : true
@@ -1376,23 +1394,27 @@ Resources:
       Type: String
       Value: !Sub |
         <powershell>
-        # Script Log
+        # QUEST 3 - AMAZON EC2 USER DATA
         Start-Transcript -Path "C:\UserData.log" -Append
         Write-Output "LOG: START OF EXECUTION"
         # Install/upgrade SSM Agent
         if (-not (Test-Path C:\SSMAgent_latest.exe)) {
-            Write-Output "LOG: Installing/upgrading SSM Agent"
-            [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
-            (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
-            Start-Process `
-              -FilePath C:\SSMAgent_latest.exe `
-              -ArgumentList "/S" `
-              -Wait
+          Write-Output "LOG: Installing/upgrading SSM Agent"
+          [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
+          (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
+          Start-Process -FilePath "C:\SSMAgent_latest.exe" -ArgumentList "/S" -Wait
         }
         # Install/upgrade SSM Agent Session Manager Plugin
         if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
           (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe", "C:\SessionManagerPluginSetup.exe")
           Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
+        }
+        # Apply AWS Systems Manager Fleet Manager Powershell Interface fix
+          if (-not (Test-Path "C:\Program Files\WindowsPowerShell\Modules\PSReadline\2.3.4")) {
+            Write-Output "LOG: Applying AWS Systems Manager Fleet Manager Powershell Interface fix"
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
+            Save-Module -Name PowerShellGet -Path 'C:\Program Files\WindowsPowerShell\Modules' -Force -Confirm:$false
+            Install-Module -Name PSReadLine -Scope AllUsers -Force -Confirm:$false
         }
         # Disable IE ESC
         $IEESCRegKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
@@ -1450,7 +1472,7 @@ Resources:
                 New-ADUser -Name $sqladminFetchedSecret.username -Description "SQL admin account" -Enabled $true -AccountPassword (ConvertTo-SecureString $sqladminFetchedSecret.password -AsPlainText -Force) -Credential $Credentials
               } 
           until (get-aduser -filter "samaccountname -eq 'sqladmin'")
-          New-Item -Path \\${fsxmmadsingaz.DNSName}\share\AppPoolSignal.token -ItemType File -Force
+          New-Item -Path 'c:\share\AppPoolSignal.token' -ItemType File -Force
         }
         # Create App Pool Windows integrated SQL login
         if (-not (Test-Path "c:\share\AppPoolComplete.token")) {
@@ -1469,11 +1491,8 @@ Resources:
           $connectionString = "Server=$serverInstance;Database=MASTER;User ID=$sqlsaFetchedUsername;Password=$sqlsaFetchedpassword;TrustServerCertificate=True;"
           Invoke-SqlCmd -ConnectionString $connectionString -Query $sqlCommand
           New-Item -Path 'c:\share\AppPoolComplete.token' -ItemType File -Force
+          New-SMBShare -Name share -path c:\share -ReadAccess Everyone
         }
-        # Useful Locations
-        Write-Output "Log locations"
-        Write-Output "C:\Windows\System32\config\systemprofile\AppData\Local\Temp"
-        Write-Output "C:\ProgramData\Amazon\EC2Launch\log\"
         # Stop logging
         Stop-Transcript
         </powershell>
@@ -1534,7 +1553,6 @@ Resources:
     DependsOn:
       - mad01
       - rdsmssql01
-      - fsxmmadsingaz
     Condition: Deployall
 
   ### Amazon EC2 File Server (Quest)
@@ -1583,18 +1601,22 @@ Resources:
           Write-Output "LOG: START OF EXECUTION"
           # Install/upgrade SSM Agent
           if (-not (Test-Path C:\SSMAgent_latest.exe)) {
-              Write-Output "LOG: Installing/upgrading SSM Agent"
-              [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
-              (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
-              Start-Process `
-                -FilePath C:\SSMAgent_latest.exe `
-                -ArgumentList "/S" `
-                -Wait
+            Write-Output "LOG: Installing/upgrading SSM Agent"
+            [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
+            (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
+            Start-Process -FilePath "C:\SSMAgent_latest.exe" -ArgumentList "/S" -Wait
           }
           # Install/upgrade SSM Agent Session Manager Plugin
           if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
             (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe", "C:\SessionManagerPluginSetup.exe")
             Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
+          }
+          # Apply AWS Systems Manager Fleet Manager Powershell Interface fix
+          if (-not (Test-Path "C:\Program Files\WindowsPowerShell\Modules\PSReadline\2.3.4")) {
+            Write-Output "LOG: Applying AWS Systems Manager Fleet Manager Powershell Interface fix"
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
+            Save-Module -Name PowerShellGet -Path 'C:\Program Files\WindowsPowerShell\Modules' -Force -Confirm:$false
+            Install-Module -Name PSReadLine -Scope AllUsers -Force -Confirm:$false
           }
           # Disable IE ESC
           $IEESCRegKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
@@ -1713,6 +1735,122 @@ Resources:
           TargetGroupArn: !Ref ltg01
     Condition: Deployall
 
+  ### Network Load Balancer for RDP over Internet (WARNING: Not recommended - but necessary for some workshop attendees)
+  scgnlb01:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${PrefixCode}-securitygroup-rdp
+      GroupDescription: NLB security group
+      VpcId: !Ref vpc01
+      SecurityGroupIngress:
+        - Description: Allow RDP traffic from Internet to NLB
+          IpProtocol: tcp
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - Description: allow all traffic outbound
+          IpProtocol: "-1"
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-securitygroup-nlb
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: security
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+    Condition: DeployNLB
+  scgapp01nlb:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow RDP traffic from NLB
+      GroupId: !GetAtt scgapp01.GroupId
+      IpProtocol: tcp
+      FromPort: 3389
+      ToPort: 3389
+      SourceSecurityGroupId: !Ref scgnlb01
+    Condition: DeployNLB
+  nlb01:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${PrefixCode}-loadbalancer-rdp
+      Scheme: internet-facing
+      Type: network
+      SecurityGroups:
+        - !Ref scgnlb01
+      Subnets:
+        - !Ref sbnpb01
+        - !Ref sbnpb02
+      LoadBalancerAttributes:
+        - Key: deletion_protection.enabled
+          Value: "false"
+        - Key: access_logs.s3.enabled
+          Value: "true"
+        - Key: access_logs.s3.bucket
+          Value: !Ref s3bucket
+        - Key: access_logs.s3.prefix
+          Value: loadbalancer-rdp
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-loadbalancer-rdp
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: networking
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+    Condition: DeployNLB
+  rtg01:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${PrefixCode}-targetgroup-rdp
+      Port: 3389
+      Protocol: TCP
+      TargetType: instance
+      VpcId: !Ref vpc01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-targetgroup-rdp
+        - Key: provisioner
+          Value: CFN
+        - Key: workshop
+          Value: !Sub ${WorkShopTag}
+        - Key: resourcetype
+          Value: networking
+        - Key: customer
+          Value: !Sub ${DepartmentTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: codeblock
+          Value: !Sub ${PrefixCode}-resources
+    Condition: DeployNLB
+  rdplistener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref nlb01
+      Port: 3389
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref rtg01
+    Condition: DeployNLB  
+
   ### Web Server foundation (Scaffold)
   smsapppoolsvc01:
     Type: AWS::SecretsManager::Secret
@@ -1750,7 +1888,7 @@ Resources:
       Type: String
       Value: !Sub |
         <powershell>
-        # Script Log
+        # QUEST 6 - AUTOSCALING GROUP LAUNCH TEMPLATE USER DATA
         Start-Transcript -Path "C:\UserData.log" -Append
         Write-Output "LOG: START OF EXECUTION"
         # Install/upgrade SSM Agent
@@ -1758,16 +1896,13 @@ Resources:
             Write-Output "LOG: Installing/upgrading SSM Agent"
             [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
             (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
-            Start-Process `
-              -FilePath C:\SSMAgent_latest.exe `
-              -ArgumentList "/S" `
-              -Wait
+            Start-Process -FilePath "C:\SSMAgent_latest.exe" -ArgumentList "/S" -Wait
         }
         # Wait for domain join before continue
         do {
           $checkdomainjoinedstatus = (Get-WmiObject win32_computersystem).partofdomain
           Write-Output "LOG: Waiting for instance to join AD domain..."
-          Start-Sleep -Seconds 10
+          Start-Sleep -Seconds 20
         }
         until ($checkdomainjoinedstatus -eq 'True')
         Write-Output "LOG: Instance has been joined to AD domain!"
@@ -1775,6 +1910,13 @@ Resources:
         if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
           (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe", "C:\SessionManagerPluginSetup.exe")
           Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
+        }
+        # Apply AWS Systems Manager Fleet Manager Powershell Interface fix
+          if (-not (Test-Path "C:\Program Files\WindowsPowerShell\Modules\PSReadline\2.3.4")) {
+            Write-Output "LOG: Applying AWS Systems Manager Fleet Manager Powershell Interface fix"
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
+            Save-Module -Name PowerShellGet -Path 'C:\Program Files\WindowsPowerShell\Modules' -Force -Confirm:$false
+            Install-Module -Name PSReadLine -Scope AllUsers -Force -Confirm:$false
         }
         # Disable IE ESC
         $IEESCRegKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
@@ -1815,7 +1957,7 @@ Resources:
         Write-Output "LOG: Configuring webserver domain settings"
           # Check App Pool AD User account created
           do {
-              $checkstatus = test-path \\${fsxmmadsingaz.DNSName}\share\AppPoolSignal.token
+              $checkstatus = test-path \\${AdminBoxName}\share\AppPoolSignal.token
               Write-Output "LOG: Waiting for App Pool AD User account creation..."
               Start-Sleep -Seconds 10
           }
@@ -1914,7 +2056,6 @@ Resources:
     DependsOn:
       - mad01
       - rdsmssql01
-      - fsxmmadsingaz
       - ec2srv01
     Condition: Deployall
   aspwebserver:
@@ -1970,6 +2111,6 @@ Resources:
       Targets:
       - Key: tag:workshop
         Values:
-        - "mag"
+        - !Sub ${WorkShopTag}
     DependsOn:
       - ssmdoc

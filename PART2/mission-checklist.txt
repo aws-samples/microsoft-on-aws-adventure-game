@@ -98,7 +98,7 @@ C:\ProgramData\\chocolatey\choco install visualstudio2022community -y
 C:\ProgramData\\chocolatey\choco install visualstudio2022-workload-netweb -y
 
 [08] Install Google Chrome
-C:\ProgramData\\chocolatey\choco install googlechrome -y
+C:\ProgramData\\chocolatey\choco install googlechrome -y --ignore-checksums
 
 [09] Download and Extract App2Container
 $FolderPath = "C:\MISSION_PACK"

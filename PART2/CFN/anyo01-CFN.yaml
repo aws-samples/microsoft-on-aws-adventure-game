@@ -25,6 +25,7 @@ Metadata:
         Parameters:
           - WindowsDomain
           - AdminBoxName
+          - SourceServerName
           - LatestAmiIdWin
           - LatestAmiIdECS
       - Label:
@@ -78,6 +79,10 @@ Parameters:
     Type: String
     Default: devbox
     Description: Enter the hostname of the Windows EC2 administration server. Maximum 15 characters.
+  SourceServerName:
+    Type: String
+    Default: oldweb
+    Description: Enter the hostname of the Windows EC2 legacy web application server. Maximum 9 characters.
   PrefixCode:
     Type: String
     Default: anyo
@@ -914,6 +919,11 @@ Resources:
           FromPort: 3306
           ToPort: 3306
           SourceSecurityGroupId: !Ref scgapp01
+        - Description: WARNING This rule is intended to enable the functioning of Mission 1 App2Container Not suitable for production environments
+          IpProtocol: tcp
+          FromPort: 1433
+          ToPort: 1433
+          CidrIp: !Sub ${VpcCidr}.0.0/16
       SecurityGroupEgress:
         - Description: allow all traffic outbound
           IpProtocol: "-1"
@@ -994,8 +1004,6 @@ Resources:
           - !Ref sbnpv04
         VpcId: !Ref vpc01
     DependsOn: smsmmad01
-
-  ### DHCP Scope (Source)
   dhcpscope01:
     Type: AWS::EC2::DHCPOptions
     Properties:
@@ -1021,46 +1029,6 @@ Resources:
     Properties:
       VpcId: !Ref vpc01
       DhcpOptionsId: !Ref dhcpscope01
-
-  ### AWS Systems Manager Documents (Source)  
-  ssmdomainjoin:
-    Type: "AWS::SSM::Document"
-    Properties:
-      Name: !Sub ${PrefixCode}-systemmanagerdoc-domainjoin
-      DocumentType: "Command"
-      Content:
-        schemaVersion: "2.2"
-        description: "Join instances to domain based on tag"
-        mainSteps:
-          - action: "aws:domainJoin"
-            name: "domainJoin"
-            inputs:
-              directoryId: !Ref mad01
-              directoryName: !Sub ${WindowsDomain}
-              dnsIpAddresses: !GetAtt mad01.DnsIpAddresses
-      Tags:
-        - Key: Name
-          Value: !Sub ${PrefixCode}-systemmanagerdoc-domainjoin
-        - Key: provisioner
-          Value: CFN
-        - Key: workshop
-          Value: !Sub ${WorkShopTag}
-        - Key: resourcetype
-          Value: automation
-        - Key: customer
-          Value: !Sub ${DepartmentTag}
-        - Key: environment
-          Value: !Sub ${EnvironmentTag}
-        - Key: codeblock
-          Value: !Sub ${PrefixCode}-resources
-  ssmdomainjoinassoc:
-    Type: AWS::SSM::Association
-    Properties:
-      Name: !Ref ssmdomainjoin
-      Targets:
-        - Key: "tag:domainjoin"
-          Values:
-            - "true"
   iarrdsauth01:
     Type: AWS::IAM::Role
     Properties:
@@ -1432,6 +1400,18 @@ Resources:
                   # added through testing
                   - route53:CreateHostedZone
                 Resource: "*"
+        # WARNING: The below policy is used to allow App2Container CFN rollback on failure and is not suitable for production use.
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-cloudformation-management
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStacks
+                Resource: "*"
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
         - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMDirectoryServiceAccess
@@ -1509,13 +1489,10 @@ Resources:
           Write-Output "LOG: START OF EXECUTION"
           # Install/upgrade SSM Agent
           if (-not (Test-Path C:\SSMAgent_latest.exe)) {
-              Write-Output "LOG: Installing/upgrading SSM Agent"
-              [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
-              (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
-              Start-Process `
-                -FilePath C:\SSMAgent_latest.exe `
-                -ArgumentList "/S" `
-                -Wait
+            Write-Output "LOG: Installing/upgrading SSM Agent"
+            [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
+            (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
+            Start-Process -FilePath "C:\SSMAgent_latest.exe" -ArgumentList "/S" -Wait
           }
           # Install/upgrade SSM Agent Session Manager Plugin
           if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
@@ -1529,8 +1506,10 @@ Resources:
               Set-ItemProperty -Path $IEESCRegKey -Name "IsInstalled" -Value 0
             }
           # Install AWSCLIv2
-          if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2\aws.exe")) {
-            Write-Output "LOG: Intalling AWSCLIv2"
+          $Software = "AWS Command Line Interface v2"
+          $Installed = $null -ne (Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -eq $Software })
+          if (-not $installed) {
+            Write-Output "LOG: Installing AWSCLIv2"
             Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "https://awscli.amazonaws.com/AWSCLIV2.msi", "/quiet" -Wait
             }
           # Install Admin tools
@@ -1538,15 +1517,18 @@ Resources:
             Write-Output "LOG: installing admin tools"
             Install-WindowsFeature -Name RSAT-AD-Tools -IncludeAllSubFeature
           }
-          # Install .NET Framework 4.8
+          # Install .NET Framework and .NET
           if ((Get-ItemPropertyValue -Path 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -Name Version) -notlike "4.8.*") {
-          (New-Object System.Net.WebClient).DownloadFile("https://go.microsoft.com/fwlink/?linkid=2088631", "C:\dot-net-4.8-setup.exe") 
-          do {
-                Write-Output "LOG: Installing .NET Framework 4.8"
-                Start-Process -FilePath "C:\dot-net-4.8-setup.exe" -ArgumentList "/q" -Wait
-             }
-          until ((Get-ItemPropertyValue -Path 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -Name Version) -like "4.8.*")
-          Write-Output "LOG: .NET Framework 4.8 has been installed" 
+            Invoke-WebRequest -Uri "https://dot.net/v1/dotnet-install.ps1" -OutFile "$env:TEMP\dotnet-install.ps1"
+            & "$env:TEMP\dotnet-install.ps1" -Channel 6.0 -InstallDir "$env:ProgramFiles\dotnet" -NoPath
+            & "$env:TEMP\dotnet-install.ps1" -Channel 7.0 -InstallDir "$env:ProgramFiles\dotnet" -NoPath
+            (New-Object System.Net.WebClient).DownloadFile("https://go.microsoft.com/fwlink/?linkid=2088631", "C:\dot-net-4.8-setup.exe") 
+            do {
+                  Write-Output "LOG: Installing .NET Framework 4.8"
+                  Start-Process -FilePath "C:\dot-net-4.8-setup.exe" -ArgumentList "/q" -Wait
+              }
+            until ((Get-ItemPropertyValue -Path 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -Name Version) -like "4.8.*")
+            Write-Output "LOG: .NET Framework 4.8 has been installed" 
           }
           # Install Chocolatey
           if (-not (Test-Path C:\ProgramData\\chocolatey)) {
@@ -1587,7 +1569,7 @@ Resources:
               $Installed = $null -ne (Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -eq $app.Software })
               if (-not $Installed) {
                   Write-Output "LOG: Installing $($app.Software)"
-                  $installProcess = Start-Process -FilePath "choco" -ArgumentList "install $($app.PackageName) --no-progress -y" -PassThru -RedirectStandardError .\choco_errors.log -Wait
+                  $installProcess = Start-Process -FilePath "choco" -ArgumentList "install $($app.PackageName) --no-progress --ignore-checksums -y" -PassThru -RedirectStandardError .\choco_errors.log -Wait
                   if ($app.PathToAdd) {
                       $env:Path += ";$($app.PathToAdd)"
                   }
@@ -1600,6 +1582,7 @@ Resources:
           }
           # Join MMAD Domain
           if ((Get-WmiObject win32_computersystem).partofdomain -eq $false)  {
+            Set-DefaultAWSRegion -Region ${AWS::Region}
             $FetchedSecret = ConvertFrom-Json -InputObject (Get-SECSecretValue -SecretId ${smsmmad01}).SecretString
             $DomainAdminUsername = $FetchedSecret.domain + "\" + $FetchedSecret.username 
             $Credentials = (New-Object PSCredential($DomainAdminUsername,(ConvertTo-SecureString $FetchedSecret.password -AsPlainText -Force)))
@@ -1656,6 +1639,7 @@ Resources:
               icacls $FolderPath /grant "Everyone:(OI)(CI)F" /T
               $env:GIT_REDIRECT_STDERR = '2>&1'
               git clone ${GitRepo} $FolderPath\REPO
+              Set-DefaultAWSRegion -Region ${AWS::Region}
               $FetchedSecret = ConvertFrom-Json -InputObject (Get-SECSecretValue -SecretId ${smsmmad01}).SecretString
               (Get-Content $FolderPath\REPO\PART2\mission-checklist.txt) |
                   ForEach-Object {
@@ -1952,32 +1936,40 @@ Resources:
                 Value: !Sub ${EnvironmentTag}
               - Key: codeblock
                 Value: !Sub ${PrefixCode}-resources
-              - Key: domainjoin
-                Value: 'true'
         UserData:
           Fn::Base64: !Sub |
             <powershell>
             # Script Log
             Start-Transcript -Path "C:\UserData.log" -Append
             Write-Output "LOG: START OF EXECUTION"
+            # Join MMAD Domain
+            if ((Get-WmiObject win32_computersystem).partofdomain -eq $false)  {
+              Set-DefaultAWSRegion -Region ${AWS::Region}
+              $RandomComputerName = "${SourceServerName}" + (Get-Random -Minimum 1000 -Maximum 999999)
+              $FetchedSecret = ConvertFrom-Json -InputObject (Get-SECSecretValue -SecretId ${smsmmad01}).SecretString
+              $DomainAdminUsername = $FetchedSecret.domain + "\" + $FetchedSecret.username 
+              $Credentials = (New-Object PSCredential($DomainAdminUsername,(ConvertTo-SecureString $FetchedSecret.password -AsPlainText -Force)))
+              Rename-Computer -NewName $RandomComputerName
+              Start-Sleep -Seconds 5
+              Write-Output "LOG: Joining Active Directory Domain"
+              Add-Computer -DomainName ${WindowsDomain} -Credential $Credentials -force -Options JoinWithNewName,AccountCreate -restart
+              # Wait for domain join before continue
+              do {
+                $checkdomainjoinedstatus = (Get-WmiObject win32_computersystem).partofdomain
+                Write-Output "LOG: Waiting for instance to join AD domain..."
+                Start-Sleep -Seconds 10
+              }
+              until ($checkdomainjoinedstatus -eq 'True')
+              Write-Output "LOG: Instance has been joined to AD domain!"
+              Start-Sleep -Seconds 30
+            }
             # Install/upgrade SSM Agent
             if (-not (Test-Path C:\SSMAgent_latest.exe)) {
-                Write-Output "LOG: Installing/upgrading SSM Agent"
-                [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
-                (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
-                Start-Process `
-                  -FilePath C:\SSMAgent_latest.exe `
-                  -ArgumentList "/S" `
-                  -Wait
+              Write-Output "LOG: Installing/upgrading SSM Agent"
+              [System.Net.ServicePointManager]::SecurityProtocol = 'TLS12'
+              (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/windows_amd64/AmazonSSMAgentSetup.exe", "C:\SSMAgent_latest.exe")
+              Start-Process -FilePath "C:\SSMAgent_latest.exe" -ArgumentList "/S" -Wait
             }
-            # Wait for domain join before continue
-            do {
-              $checkdomainjoinedstatus = (Get-WmiObject win32_computersystem).partofdomain
-              Write-Output "LOG: Waiting for instance to join AD domain..."
-              Start-Sleep -Seconds 10
-            }
-            until ($checkdomainjoinedstatus -eq 'True')
-            Write-Output "LOG: Instance has been joined to AD domain!"
             # Install/upgrade SSM Agent Session Manager Plugin
             if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
               (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe", "C:\SessionManagerPluginSetup.exe")
@@ -1990,8 +1982,10 @@ Resources:
                 Set-ItemProperty -Path $IEESCRegKey -Name "IsInstalled" -Value 0
               }
             # Install AWSCLIv2
-            if (-not (Test-Path "C:\Program Files\Amazon\AWSCLIV2\aws.exe")) {
-              Write-Output "LOG: Intalling AWSCLIv2"
+            $Software = "AWS Command Line Interface v2"
+            $Installed = $null -ne (Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -eq $Software })
+            if (-not $installed) {
+              Write-Output "LOG: Installing AWSCLIv2"
               Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "https://awscli.amazonaws.com/AWSCLIV2.msi", "/quiet" -Wait
               }
             # Install IIS Web Services
@@ -2001,15 +1995,16 @@ Resources:
               }
             # Copy Webserver files
             Write-Output "LOG: Copying web server files"
-            C:\PROGRA~1\Amazon\AWSCLIV2\aws s3 sync s3://${S3SourceBucket }/anyo-platform-release/anyo-legacy C:\inetpub\anyo
+            Set-DefaultAWSRegion -Region ${AWS::Region}
+            C:\PROGRA~1\Amazon\AWSCLIV2\aws s3 sync s3://${S3SourceBucket}/anyo-platform-release/anyo-legacy C:\inetpub\anyo
             (Get-Content C:\inetpub\anyo\Web.config) |
                 ForEach-Object {
                     $_ -replace '<AMAZONRDSSQLSERVER>', '${rdsmssql01.Endpoint.Address}' `
                       -replace '<SQLUSERNAME>', ((Get-SECSecretValue -SecretId ${smssqladmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty username) `
                       -replace '<SQLPASSWORD>', ((Get-SECSecretValue -SecretId ${smssqladmin}).SecretString | ConvertFrom-Json | Select-Object -ExpandProperty password) `
                 } | Set-Content C:\inetpub\anyo\Web.config
-            # Configure Web Server local settings TODO: Sort if on subsequent runs
-            if (Test-Path C:\inetpub\anyo) {
+            # Configure Web Server local settings
+            if (-not (Get-ChildItem -Path Cert:\LocalMachine\My | Where-Object { $_.FriendlyName -eq "anyo" })) {
               Write-Output "LOG: Configuring webserver local settings"
               # Set permissions and create website
               icacls "C:\INETPUB\anyo" /grant "IIS_IUSRS:(OI)(CI)(RX)"

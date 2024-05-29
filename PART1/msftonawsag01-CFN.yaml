@@ -18,6 +18,7 @@ Metadata:
           default: Network Settings
         Parameters:
           - VpcCidr
+          - PublicIPAddress
       - Label:
           default: Operating System Settings
         Parameters:
@@ -55,6 +56,10 @@ Parameters:
     Type: String
     Default: "10.180"
     Description: Specify the first 2 octets of VPC and subnet CIDR range
+  PublicIPAddress:
+    Type: String
+    Default: "0.0.0.0/0"
+    Description: Enter your own IP address for remote server administration (use x.x.x.x/32). WARNING The default will allow everyone access.
   LatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base
@@ -1412,13 +1417,6 @@ Resources:
           (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe", "C:\SessionManagerPluginSetup.exe")
           Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
         }
-        # Apply AWS Systems Manager Fleet Manager Powershell Interface fix
-          if (-not (Test-Path "C:\Program Files\WindowsPowerShell\Modules\PSReadline\2.3.4")) {
-            Write-Output "LOG: Applying AWS Systems Manager Fleet Manager Powershell Interface fix"
-            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
-            Save-Module -Name PowerShellGet -Path 'C:\Program Files\WindowsPowerShell\Modules' -Force -Confirm:$false
-            Install-Module -Name PSReadLine -Scope AllUsers -Force -Confirm:$false
-        }
         # Disable IE ESC
         $IEESCRegKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
         if ((Test-Path -Path $IEESCRegKey) -and ((Get-ItemPropertyValue -Path $IEESCRegKey -Name "IsInstalled") -ne 0)) {
@@ -1616,13 +1614,6 @@ Resources:
             (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe", "C:\SessionManagerPluginSetup.exe")
             Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
           }
-          # Apply AWS Systems Manager Fleet Manager Powershell Interface fix
-          if (-not (Test-Path "C:\Program Files\WindowsPowerShell\Modules\PSReadline\2.3.4")) {
-            Write-Output "LOG: Applying AWS Systems Manager Fleet Manager Powershell Interface fix"
-            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
-            Save-Module -Name PowerShellGet -Path 'C:\Program Files\WindowsPowerShell\Modules' -Force -Confirm:$false
-            Install-Module -Name PSReadLine -Scope AllUsers -Force -Confirm:$false
-          }
           # Disable IE ESC
           $IEESCRegKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
           if ((Test-Path -Path $IEESCRegKey) -and ((Get-ItemPropertyValue -Path $IEESCRegKey -Name "IsInstalled") -ne 0)) {
@@ -1755,7 +1746,7 @@ Resources:
           IpProtocol: tcp
           FromPort: 3389
           ToPort: 3389
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Sub ${PublicIPAddress}
       SecurityGroupEgress:
         - Description: allow all traffic outbound
           IpProtocol: "-1"
@@ -1922,13 +1913,6 @@ Resources:
         if (-not (Test-Path C:\SessionManagerPluginSetup.exe)) {
           (New-Object System.Net.WebClient).DownloadFile("https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPluginSetup.exe", "C:\SessionManagerPluginSetup.exe")
           Start-Process C:\SessionManagerPluginSetup.exe -ArgumentList @("/q", "/log", "install.log") -Wait
-        }
-        # Apply AWS Systems Manager Fleet Manager Powershell Interface fix
-          if (-not (Test-Path "C:\Program Files\WindowsPowerShell\Modules\PSReadline\2.3.4")) {
-            Write-Output "LOG: Applying AWS Systems Manager Fleet Manager Powershell Interface fix"
-            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
-            Save-Module -Name PowerShellGet -Path 'C:\Program Files\WindowsPowerShell\Modules' -Force -Confirm:$false
-            Install-Module -Name PSReadLine -Scope AllUsers -Force -Confirm:$false
         }
         # Disable IE ESC
         $IEESCRegKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"

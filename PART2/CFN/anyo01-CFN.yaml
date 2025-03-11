@@ -2229,7 +2229,7 @@ Resources:
       KmsKeyId: !GetAtt kmskey.Arn
       MultiAZ: false
       PubliclyAccessible: false
-      ReplicationInstanceClass: dms.c4.large
+      ReplicationInstanceClass: dms.c6i.2xlarge
       ReplicationInstanceIdentifier: !Sub ${PrefixCode}-dms-repinstance
       ReplicationSubnetGroupIdentifier: !Sub ${dmssubnetgroup}
       VpcSecurityGroupIds: 
